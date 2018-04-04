@@ -1,19 +1,24 @@
 from __future__ import print_function
+
 import os
 from argparse import ArgumentParser
+import random
+import logging
 
+import numpy as np
+
+from sklearn.model_selection import StratifiedKFold
+
+import torch
 from torch import nn
 from torch.optim import Adam
 from torch.utils.data import DataLoader
-import torch
-from torch.nn import functional as F
+from torch.utils.data.sampler import SubsetRandomSampler
 from torch.optim.lr_scheduler import ExponentialLR, ReduceLROnPlateau
 from torchvision.transforms import Compose, ToTensor, Normalize, Resize
 from torchvision.transforms import RandomVerticalFlip, RandomHorizontalFlip, RandomChoice, RandomAffine
 from torchvision.transforms import ColorJitter
 from torchvision.datasets import CIFAR10
-from torchvision.models.squeezenet import squeezenet1_1
-import torchvision.utils as vutils
 
 try:
     from tensorboardX import SummaryWriter
@@ -25,56 +30,91 @@ from ignite.metrics import CategoricalAccuracy, Loss, Precision, Recall
 from ignite.handlers import ModelCheckpoint, Timer, EarlyStopping
 from ignite._utils import to_variable, to_tensor
 
+from models import get_small_squeezenet_v1_1
 
-def get_data_loaders(train_batch_size, val_batch_size, num_workers, cuda=True):
-    data_transform = Compose([
+
+SEED = 12345
+random.seed(SEED)
+torch.manual_seed(SEED)
+
+
+def get_train_val_indices(dataset, fold_index=0, n_splits=5):
+    # Stratified split: train/val:
+    n_samples = len(dataset)
+    X = np.zeros((n_samples, 1))
+    y = np.zeros(n_samples)
+    for i, (_, label) in enumerate(dataset):
+        y[i] = label
+
+    skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=SEED)
+    for i, (train_indices, val_indices) in enumerate(skf.split(X, y)):
+        if i == fold_index:
+            return train_indices, val_indices
+
+
+def get_data_loaders(path, train_batch_size, val_batch_size, num_workers, cuda=True):
+    train_data_transform = Compose([
         Resize(42),
         RandomChoice([
-            RandomAffine(degrees=(-60, 60), scale=(0.95, 1.05), translate=(0.05, 0.05)),
+            RandomAffine(degrees=(-50, 50), scale=(0.95, 1.05), translate=(0.05, 0.05)),
             RandomHorizontalFlip(p=0.5),
             RandomVerticalFlip(p=0.5),
         ]),
-        ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4),
+        ColorJitter(hue=0.05),
         ToTensor(),
         Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
     ])
 
-    train_dataset = CIFAR10('.', train=True, transform=data_transform, download=True)
-    val_dataset = CIFAR10('.', train=False, transform=data_transform, download=False)
+    val_data_transform = Compose([
+        Resize(42),
+        RandomHorizontalFlip(p=0.5),
+        RandomVerticalFlip(p=0.5),
+        ToTensor(),
+        Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
+    ])
 
-    train_loader = DataLoader(train_dataset, batch_size=train_batch_size, shuffle=True,
+    train_dataset = CIFAR10(path, train=True, transform=train_data_transform, download=True)
+    val_dataset = CIFAR10(path, train=True, transform=val_data_transform, download=False)
+
+    train_indices, val_indices = get_train_val_indices(train_dataset, fold_index=0, n_splits=5)
+
+    train_loader = DataLoader(train_dataset, batch_size=train_batch_size,
+                              sampler=SubsetRandomSampler(train_indices),
                               num_workers=num_workers, pin_memory=cuda)
-    val_loader = DataLoader(val_dataset, batch_size=val_batch_size, shuffle=False,
+    val_loader = DataLoader(val_dataset, batch_size=val_batch_size,
+                            sampler=SubsetRandomSampler(val_indices),
                             num_workers=num_workers, pin_memory=cuda)
 
     return train_loader, val_loader
 
 
+def create_logger(output, level=logging.INFO):
+    logger = logging.getLogger("Cifar10 Playground: Train")
+    logger.setLevel(level)
+    # create file handler which logs even debug messages
+    fh = logging.FileHandler(os.path.join(output, "train.log"))
+    fh.setLevel(level)
+    # create console handler with a higher log level
+    ch = logging.StreamHandler()
+    ch.setLevel(level)
+    # create formatter and add it to the handlers
+    formatter = logging.Formatter("%(asctime)s|%(name)s|%(levelname)s| %(message)s")
+    fh.setFormatter(formatter)
+    ch.setFormatter(formatter)
+    # add the handlers to the logger
+    logger.addHandler(fh)
+    logger.addHandler(ch)
+    return logger
+
+
 def create_summary_writer(model, log_dir, cuda):
     writer = SummaryWriter(log_dir=log_dir)
-    # try:
-    #     dummy_input = to_variable(torch.rand(10, 3, 42, 42), cuda=cuda)
-    #     torch.onnx.export(model, dummy_input, "model.proto", verbose=True)
-    #     writer.add_graph_onnx("model.proto")
-    # except Exception as e:
-    #     print("Failed to save model graph: {}".format(e))
+    try:
+        dummy_input = to_variable(torch.rand(10, 3, 42, 42), cuda=cuda)
+        writer.add_graph(model, dummy_input)
+    except Exception as e:
+        print("Failed to save model graph: {}".format(e))
     return writer
-
-
-def get_model(num_classes):
-    from torch.nn import Conv2d, AdaptiveAvgPool2d, Sequential
-    model = squeezenet1_1(num_classes=num_classes, pretrained=False)
-    # As input image size is small 64x64, we modify first layers:
-    # replace : Conv2d(3, 64, (3, 3), stride=(2, 2)) by Conv2d(3, 64, (3, 3), stride=(1, 1), padding=1)
-    # remove : MaxPool2d (size=(3, 3), stride=(2, 2), dilation=(1, 1)))
-    layers = [l for i, l in enumerate(model.features) if i != 2]
-    layers[0] = Conv2d(3, 64, kernel_size=(3, 3), padding=1)
-    model.features = Sequential(*layers)
-    # Replace the last AvgPool2d -> AdaptiveAvgPool2d
-    layers = [l for l in model.classifier]
-    layers[-1] = AdaptiveAvgPool2d(1)
-    model.classifier = Sequential(*layers)
-    return model
 
 
 def create_supervised_trainer(model, optimizer, loss_fn, metrics={}, cuda=False):
@@ -109,31 +149,44 @@ def create_supervised_trainer(model, optimizer, loss_fn, metrics={}, cuda=False)
     return trainer
 
 
-def run(train_batch_size, val_batch_size, num_workers, epochs, lr, gamma, log_interval, output, debug):
+def run(path, train_batch_size, val_batch_size,
+        num_workers, epochs, lr, gamma, log_interval,
+        output, checkpoint_filepath,
+        debug):
+
+    print("--- Cifar10 Playground : Train --- ")
 
     from datetime import datetime
     now = datetime.now()
     log_dir = os.path.join(output, "%s" % (now.strftime("%Y%m%d_%H%M")))
     os.makedirs(log_dir, exist_ok=True)
 
+    log_level = logging.INFO
     if debug:
+        log_level = logging.DEBUG
         print("Activated debug mode")
+    logger = create_logger(log_dir, log_level)
 
     cuda = torch.cuda.is_available()
     if cuda:
         from torch.backends import cudnn
         cudnn.benchmark = True
 
-    train_loader, val_loader = get_data_loaders(train_batch_size, val_batch_size, num_workers, cuda=cuda)
+    logger.debug("Setup train/val dataloaders")
+    train_loader, val_loader = get_data_loaders(path, train_batch_size, val_batch_size, num_workers, cuda=cuda)
 
-    model = get_model(num_classes=10)
+    logger.debug("Setup model")
+    model = get_small_squeezenet_v1_1(num_classes=10)
     model_name = model.__class__.__name__
     if cuda:
         model = model.cuda()
 
+    logger.debug("Setup tensorboard writer")
     writer = create_summary_writer(model, os.path.join(log_dir, "tensorboard"), cuda=cuda)
 
+    logger.debug("Setup optimizer")
     optimizer = Adam(model.parameters(), lr=lr)
+    logger.debug("Setup criterion")
     criterion = nn.CrossEntropyLoss()
     if cuda:
         criterion = criterion.cuda()
@@ -146,6 +199,7 @@ def run(train_batch_size, val_batch_size, num_workers, epochs, lr, gamma, log_in
         y = output['y']
         return to_tensor(y_pred, cpu=not cuda), to_tensor(y, cpu=not cuda)
 
+    logger.debug("Setup ignite trainer and evaluator")
     trainer = create_supervised_trainer(model, optimizer, criterion,
                                         metrics={
                                             'accuracy': CategoricalAccuracy(output_transform=output_transform),
@@ -162,6 +216,7 @@ def run(train_batch_size, val_batch_size, num_workers, epochs, lr, gamma, log_in
                                             },
                                             cuda=cuda)
 
+    logger.debug("Setup handlers")
     # Setup timer to measure training time
     timer = Timer(average=True)
     timer.attach(trainer,
@@ -173,25 +228,10 @@ def run(train_batch_size, val_batch_size, num_workers, epochs, lr, gamma, log_in
     def log_training_loss(engine):
         iter = (engine.state.iteration - 1) % len(train_loader) + 1
         if iter % log_interval == 0:
-            print("Epoch[{}] Iteration[{}/{}] Loss: {:.2f}"
-                  "".format(engine.state.epoch, iter, len(train_loader), engine.state.output['loss']))
-            # if debug:
-            #     batch_x, batch_y = engine.state.batch
-            #     if batch_y.is_cuda:
-            #         batch_y = batch_y.cpu()
-            #     m = torch.cat((batch_y.unsqueeze(1), batch_y.unsqueeze(1)), dim=1)
-            #     writer.add_embedding(m, metadata=batch_y, label_img=batch_x,
-            #                          tag='training data', global_step=engine.state.iteration)
-            # if debug:
-            #     batch_x, batch_y = engine.state.batch
-            #     x = vutils.make_grid(batch_x, scale_each=True, normalize=True)
-            #     writer.add_image('training images', x, engine.state.iteration)
-            # if debug:
-            #     y_preds = engine.state.output['y_preds']
-            #     y_probas = to_tensor(F.softmax(y_preds, dim=1), cpu=True)
-            #     y_probas = np.argmax(y_probas.numpy(), axis=1)
-            #     for p in y_probas:
-            #         writer.add_scalar('training y_preds', p, engine.state.iteration)
+            logger.info("Epoch[{}] Iteration[{}/{}] Loss: {:.2f}".format(engine.state.epoch, iter,
+                                                                         len(train_loader),
+                                                                         engine.state.output['loss']))
+
         writer.add_scalar("training/loss", engine.state.output['loss'], engine.state.iteration)
 
     @trainer.on(Events.EPOCH_STARTED)
@@ -205,23 +245,30 @@ def run(train_batch_size, val_batch_size, num_workers, epochs, lr, gamma, log_in
                 writer.add_scalar("learning_rate_group_{}".format(i), lr, engine.state.epoch)
 
     @trainer.on(Events.EPOCH_COMPLETED)
-    def log_validation_results(engine):
+    def log_training_metrics(engine):
         writer.add_scalar("training/accuracy", engine.state.metrics['accuracy'], engine.state.epoch)
-        print("One epoch training time (seconds): {}".format(timer.value()))
-        print("Training Results - Epoch: {}  Avg accuracy: {:.2f}"
+        avg_precision = torch.mean(engine.state.metrics['precision'])
+        avg_recall = torch.mean(engine.state.metrics['recall'])
+        writer.add_scalar("training/avg_precision", avg_precision, engine.state.epoch)
+        writer.add_scalar("training/avg_recall", avg_recall, engine.state.epoch)
+        logger.info("One epoch training time (seconds): {}".format(timer.value()))
+        logger.info("Training Results - Epoch: {}  Avg accuracy: {:.2f}"
               .format(engine.state.epoch, engine.state.metrics['accuracy']))
+
+    @trainer.on(Events.EPOCH_COMPLETED)
+    def log_validation_results(engine):
         evaluator.run(val_loader)
         metrics = evaluator.state.metrics
         avg_accuracy = metrics['accuracy']
         avg_nll = metrics['nll']
-        print("Validation Results - Epoch: {}  Avg accuracy: {:.2f} Avg loss: {:.2f}"
+        logger.info("Validation Results - Epoch: {}  Avg accuracy: {:.2f} Avg loss: {:.2f}"
               .format(engine.state.epoch, avg_accuracy, avg_nll))
         writer.add_scalar("validation/loss", avg_nll, engine.state.epoch)
         writer.add_scalar("validation/accuracy", avg_accuracy, engine.state.epoch)
-        print("Precision: ", metrics['precision'])
-        print("Recall: ", metrics['recall'])
-        # writer.add_scalar("validation/precision", metrics['precision'], engine.state.epoch)
-        # writer.add_scalar("validation/recall", metrics['recall'], engine.state.epoch)
+        avg_precision = torch.mean(engine.state.metrics['precision'])
+        avg_recall = torch.mean(engine.state.metrics['recall'])
+        writer.add_scalar("validation/precision", avg_precision, engine.state.epoch)
+        writer.add_scalar("validation/recall", avg_recall, engine.state.epoch)
 
     @evaluator.on(Events.COMPLETED)
     def update_reduce_on_plateau(engine):
@@ -253,7 +300,20 @@ def run(train_batch_size, val_batch_size, num_workers, epochs, lr, gamma, log_in
                               exist_ok=True)
     evaluator.add_event_handler(Events.COMPLETED, handler, {model_name: model})
 
-    trainer.run(train_loader, max_epochs=epochs)
+    logger.debug("Start training")
+    try:
+        trainer.run(train_loader, max_epochs=epochs)
+    except KeyboardInterrupt:
+        logger.info("Catched KeyboardInterrupt -> exit")
+    except Exception as e:  # noqa
+        logger.exception("")
+        if args.debug:
+            try:
+                # open an ipython shell if possible
+                import IPython
+                IPython.embed()  # noqa
+            except ImportError:
+                print("Failed to start IPython console")
 
     writer.close()
 
@@ -261,6 +321,8 @@ def run(train_batch_size, val_batch_size, num_workers, epochs, lr, gamma, log_in
 if __name__ == "__main__":
 
     parser = ArgumentParser()
+    parser.add_argument("--path", type=str, default=".",
+                        help="Optional path to Cifar10 dataset")
     parser.add_argument('--batch_size', type=int, default=64,
                         help='input batch size for training (default: 64)')
     parser.add_argument('--num_workers', type=int, default=8,
@@ -269,7 +331,7 @@ if __name__ == "__main__":
                         help='input batch size for validation (default: 100)')
     parser.add_argument('--epochs', type=int, default=50,
                         help='number of epochs to train (default: 50)')
-    parser.add_argument('--lr', type=float, default=0.001,
+    parser.add_argument('--lr', type=float, default=0.0001,
                         help='learning rate (default: 0.01)')
     parser.add_argument('--gamma', type=float, default=0.95,
                         help='learning rate exponential scheduler gamma')
@@ -279,8 +341,10 @@ if __name__ == "__main__":
                         help="directory to store best models")
     parser.add_argument("--debug", action="store_true", default=0,
                         help="Enable debugging")
+    parser.add_argument("--checkpoint", type=str, default="",
+                        help="Model checkpoint file")
 
     args = parser.parse_args()
 
-    run(args.batch_size, args.val_batch_size, args.num_workers, args.epochs,
-        args.lr, args.gamma, args.log_interval, args.output, args.debug)
+    run(args.path, args.batch_size, args.val_batch_size, args.num_workers, args.epochs,
+        args.lr, args.gamma, args.log_interval, args.output, args.checkpoint, args.debug)
