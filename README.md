@@ -7,7 +7,7 @@ More examples with [ignite](https://github.com/pytorch/ignite)
 
 ### Classification
 
-- Cifar10
+- [Cifar10](classification/cifar_10/README.md)    
 - Tiny imagenet 200
 - iMaterialist Challenge (Furniture) at FGVC5
 

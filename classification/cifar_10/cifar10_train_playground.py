@@ -30,12 +30,18 @@ from ignite.metrics import CategoricalAccuracy, Loss, Precision, Recall
 from ignite.handlers import ModelCheckpoint, Timer, EarlyStopping
 from ignite._utils import to_variable, to_tensor
 
-from models import get_small_squeezenet_v1_1
+from models import get_small_squeezenet_v1_1, get_small_squeezenet_v1_1_bn
+from lr_schedulers import LRSchedulerWithRestart
 
 
 SEED = 12345
 random.seed(SEED)
 torch.manual_seed(SEED)
+
+MODEL_MAP = {
+    "squeezenet_v1_1": get_small_squeezenet_v1_1,
+    "squeezenet_v1_1_bn": get_small_squeezenet_v1_1_bn
+}
 
 
 def get_train_val_indices(dataset, fold_index=0, n_splits=5):
@@ -149,17 +155,18 @@ def create_supervised_trainer(model, optimizer, loss_fn, metrics={}, cuda=False)
     return trainer
 
 
-def run(path, train_batch_size, val_batch_size,
-        num_workers, epochs, lr, gamma, log_interval,
-        output, checkpoint_filepath,
-        debug):
+def run(path, model_name,
+        train_batch_size, val_batch_size, num_workers,
+        epochs, lr, gamma, restart_every, restart_factor, init_lr_factor,
+        log_interval, output, debug):
 
     print("--- Cifar10 Playground : Train --- ")
 
     from datetime import datetime
     now = datetime.now()
-    log_dir = os.path.join(output, "%s" % (now.strftime("%Y%m%d_%H%M")))
-    os.makedirs(log_dir, exist_ok=True)
+    log_dir = os.path.join(output, "training_%s" % (now.strftime("%Y%m%d_%H%M")))
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir)
 
     log_level = logging.INFO
     if debug:
@@ -172,26 +179,37 @@ def run(path, train_batch_size, val_batch_size,
         from torch.backends import cudnn
         cudnn.benchmark = True
 
-    logger.debug("Setup train/val dataloaders")
-    train_loader, val_loader = get_data_loaders(path, train_batch_size, val_batch_size, num_workers, cuda=cuda)
+    logger.debug("Setup model: {}".format(model_name))
 
-    logger.debug("Setup model")
-    model = get_small_squeezenet_v1_1(num_classes=10)
+    if not os.path.isfile(model_name):
+        assert model_name in MODEL_MAP, "Model name not in {}".format(MODEL_MAP.keys())
+        model = MODEL_MAP[model_name](num_classes=10)
+    else:
+        model = torch.load(model_name)
+
     model_name = model.__class__.__name__
     if cuda:
         model = model.cuda()
+
+    logger.debug("Setup train/val dataloaders")
+    train_loader, val_loader = get_data_loaders(path, train_batch_size, val_batch_size, num_workers, cuda=cuda)
 
     logger.debug("Setup tensorboard writer")
     writer = create_summary_writer(model, os.path.join(log_dir, "tensorboard"), cuda=cuda)
 
     logger.debug("Setup optimizer")
     optimizer = Adam(model.parameters(), lr=lr)
+
     logger.debug("Setup criterion")
     criterion = nn.CrossEntropyLoss()
     if cuda:
         criterion = criterion.cuda()
 
     lr_scheduler = ExponentialLR(optimizer, gamma=gamma)
+    lr_scheduler_restarts = LRSchedulerWithRestart(lr_scheduler,
+                                                   restart_every=restart_every,
+                                                   restart_factor=restart_factor,
+                                                   init_lr_factor=init_lr_factor)
     reduce_on_plateau = ReduceLROnPlateau(optimizer, mode='min', factor=0.2, patience=5, verbose=True)
 
     def output_transform(output):
@@ -232,12 +250,12 @@ def run(path, train_batch_size, val_batch_size,
                                                                          len(train_loader),
                                                                          engine.state.output['loss']))
 
-        writer.add_scalar("training/loss", engine.state.output['loss'], engine.state.iteration)
+            writer.add_scalar("training/loss", engine.state.output['loss'], engine.state.iteration)
 
     @trainer.on(Events.EPOCH_STARTED)
     def update_lr_schedulers(engine):
-        lr_scheduler.step()
-        lrs = lr_scheduler.get_lr()
+        lr_scheduler_restarts.step()
+        lrs = lr_scheduler_restarts.get_lr()
         if len(lrs) == 1:
             writer.add_scalar("learning_rate", lrs[0], engine.state.epoch)
         else:
@@ -246,29 +264,33 @@ def run(path, train_batch_size, val_batch_size,
 
     @trainer.on(Events.EPOCH_COMPLETED)
     def log_training_metrics(engine):
-        writer.add_scalar("training/accuracy", engine.state.metrics['accuracy'], engine.state.epoch)
-        avg_precision = torch.mean(engine.state.metrics['precision'])
-        avg_recall = torch.mean(engine.state.metrics['recall'])
-        writer.add_scalar("training/avg_precision", avg_precision, engine.state.epoch)
-        writer.add_scalar("training/avg_recall", avg_recall, engine.state.epoch)
+
         logger.info("One epoch training time (seconds): {}".format(timer.value()))
         logger.info("Training Results - Epoch: {}  Avg accuracy: {:.2f}"
-              .format(engine.state.epoch, engine.state.metrics['accuracy']))
+                    .format(engine.state.epoch, engine.state.metrics['accuracy']))
+        writer.add_scalar("training/accuracy", engine.state.metrics['accuracy'], engine.state.epoch)
+
+        for metric_name in ['precision', 'recall']:
+            value = engine.state.metrics[metric_name].cpu() if cuda else engine.state.metrics[metric_name]
+            avg_value = torch.mean(engine.state.metrics[metric_name])
+            writer.add_scalar("training/avg_{}".format(metric_name), avg_value, engine.state.epoch)
+            logger.info("   {} per class: {}".format(metric_name, value.numpy().tolist()))
 
     @trainer.on(Events.EPOCH_COMPLETED)
     def log_validation_results(engine):
-        evaluator.run(val_loader)
-        metrics = evaluator.state.metrics
+        metrics = evaluator.run(val_loader).metrics
         avg_accuracy = metrics['accuracy']
         avg_nll = metrics['nll']
-        logger.info("Validation Results - Epoch: {}  Avg accuracy: {:.2f} Avg loss: {:.2f}"
-              .format(engine.state.epoch, avg_accuracy, avg_nll))
         writer.add_scalar("validation/loss", avg_nll, engine.state.epoch)
         writer.add_scalar("validation/accuracy", avg_accuracy, engine.state.epoch)
-        avg_precision = torch.mean(engine.state.metrics['precision'])
-        avg_recall = torch.mean(engine.state.metrics['recall'])
-        writer.add_scalar("validation/precision", avg_precision, engine.state.epoch)
-        writer.add_scalar("validation/recall", avg_recall, engine.state.epoch)
+        logger.info("Validation Results - Epoch: {}  Avg accuracy: {:.2f} Avg loss: {:.2f}"
+                    .format(engine.state.epoch, avg_accuracy, avg_nll))
+
+        for metric_name in ['precision', 'recall']:
+            value = engine.state.metrics[metric_name].cpu() if cuda else engine.state.metrics[metric_name]
+            avg_value = torch.mean(engine.state.metrics[metric_name])
+            writer.add_scalar("validation/avg_{}".format(metric_name), avg_value, engine.state.epoch)
+            logger.info("   {} per class: {}".format(metric_name, value.numpy().tolist()))
 
     @evaluator.on(Events.COMPLETED)
     def update_reduce_on_plateau(engine):
@@ -322,7 +344,11 @@ if __name__ == "__main__":
 
     parser = ArgumentParser()
     parser.add_argument("--path", type=str, default=".",
-                        help="Optional path to Cifar10 dataset")
+                        help="Optional path to Cifar10 dataset (default: .)")
+    parser.add_argument("--model", type=str,
+                        default="squeezenet_v1_1",
+                        help="Model choice: squeezenet_v1_1, squeezenet_v1_1_bn or "
+                             "path to saved model (default: squeezenet_v1_1)")
     parser.add_argument('--batch_size', type=int, default=64,
                         help='input batch size for training (default: 64)')
     parser.add_argument('--num_workers', type=int, default=8,
@@ -333,18 +359,25 @@ if __name__ == "__main__":
                         help='number of epochs to train (default: 50)')
     parser.add_argument('--lr', type=float, default=0.0001,
                         help='learning rate (default: 0.01)')
-    parser.add_argument('--gamma', type=float, default=0.95,
-                        help='learning rate exponential scheduler gamma')
-    parser.add_argument('--log_interval', type=int, default=10,
+    parser.add_argument('--gamma', type=float, default=0.9,
+                        help='learning rate exponential scheduler gamma (default: 0.95)')
+    parser.add_argument('--restart_every', type=float, default=10,
+                        help='restart lr scheduler every `restart_every` epoch(default: 10)')
+    parser.add_argument('--restart_factor', type=float, default=1.5,
+                        help='factor to rescale `restart_every` after each restart (default: 1.5)')
+    parser.add_argument('--init_lr_factor', type=float, default=0.5,
+                        help='factor to rescale base lr after each restart (default: 0.5)')
+    parser.add_argument('--log_interval', type=int, default=100,
                         help='how many batches to wait before logging training status')
     parser.add_argument("--output", type=str, default="output",
                         help="directory to store best models")
-    parser.add_argument("--debug", action="store_true", default=0,
+    parser.add_argument("--debug", action="store_true", default=False,
                         help="Enable debugging")
-    parser.add_argument("--checkpoint", type=str, default="",
-                        help="Model checkpoint file")
-
     args = parser.parse_args()
 
-    run(args.path, args.batch_size, args.val_batch_size, args.num_workers, args.epochs,
-        args.lr, args.gamma, args.log_interval, args.output, args.checkpoint, args.debug)
+    run(args.path, args.model,
+        args.batch_size, args.val_batch_size, args.num_workers,
+        args.epochs,
+        args.lr, args.gamma, args.restart_every, args.restart_factor, args.init_lr_factor,
+        args.log_interval, args.output,
+        args.debug)

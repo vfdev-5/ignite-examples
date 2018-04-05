@@ -5,9 +5,12 @@ from argparse import ArgumentParser
 import random
 import logging
 
+import numpy as np
+
+from sklearn.metrics import classification_report
+
 import torch
-from torch import nn
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Dataset
 from torchvision.transforms import Compose, ToTensor, Normalize, Resize
 from torchvision.transforms import RandomVerticalFlip, RandomHorizontalFlip
 from torchvision.datasets import CIFAR10
@@ -17,12 +20,9 @@ try:
 except ImportError:
     raise RuntimeError("No tensorboardX package is found. Please install with the command: \npip install tensorboardX")
 
-from ignite.engines import Events, create_supervised_evaluator, Engine
-from ignite.metrics import CategoricalAccuracy, Loss, Precision, Recall
-from ignite.handlers import ModelCheckpoint, Timer, EarlyStopping
+from ignite.engines import Events, Engine
+from ignite.handlers import Timer
 from ignite._utils import to_variable, to_tensor
-
-from models import get_small_squeezenet_v1_1
 
 
 SEED = 12345
@@ -40,14 +40,27 @@ def get_test_data_loader(path, batch_size, num_workers, cuda=True):
         Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
     ])
 
-    test_dataset = CIFAR10(path, train=False, transform=test_data_transform, download=True)
-    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False,
+    class IndexedDataset(Dataset):
+
+        def __init__(self, ds):
+            super(IndexedDataset, self).__init__()
+            self.ds = ds
+
+        def __getitem__(self, index):
+            return self.ds[index], index
+
+        def __len__(self):
+            return len(self.ds)
+
+    test_dataset = IndexedDataset(CIFAR10(path, train=False, transform=test_data_transform, download=True))
+    test_loader = DataLoader(test_dataset, batch_size=batch_size,
+                             shuffle=False, drop_last=False,
                              num_workers=num_workers, pin_memory=cuda)
-    return test_loader
+    return test_loader, test_dataset
 
 
 def create_logger(output, level=logging.INFO):
-    logger = logging.getLogger("Cifar10 Playground: Eval")
+    logger = logging.getLogger("Cifar10 Playground: Inference")
     logger.setLevel(level)
     # create file handler which logs even debug messages
     fh = logging.FileHandler(os.path.join(output, "eval.log"))
@@ -75,35 +88,35 @@ def create_summary_writer(model, log_dir, cuda):
     return writer
 
 
-def create_inferencer(model, cuda=False):
+def create_inferencer(model, cuda=True):
 
     def _prepare_batch(batch):
-        x, _ = batch
+        (x, y), indices = batch
         x = to_variable(x, cuda=cuda)
-        return x, _
+        return x, y, indices
 
     def _update(engine, batch):
-        model.eval()
-        x, _ = _prepare_batch(batch)
+        x, y, indices = _prepare_batch(batch)
         y_pred = model(x)
-        return y_pred
+        return {
+            "x": to_tensor(x, cpu=True),
+            "y_pred": to_tensor(y_pred, cpu=True),
+            "y_true": y,
+            "indices": indices
+        }
 
+    model.eval()
     inferencer = Engine(_update)
     return inferencer
 
 
-def load_checkpoint(filename, model):
-    state = torch.load(filename)
-    model.load_state_dict(state['state_dict'])
+def run(checkpoint, dataset_path, batch_size, num_workers, n_tta, output, debug):
 
-
-def run(checkpoint_path, path, batch_size, num_workers, output, debug):
-
-    print("--- Cifar10 Playground : Eval --- ")
+    print("--- Cifar10 Playground : Inference --- ")
 
     from datetime import datetime
     now = datetime.now()
-    log_dir = os.path.join(output, "%s" % (now.strftime("%Y%m%d_%H%M")))
+    log_dir = os.path.join(output, "inference_%s" % (now.strftime("%Y%m%d_%H%M")))
     os.makedirs(log_dir, exist_ok=True)
 
     log_level = logging.INFO
@@ -114,19 +127,18 @@ def run(checkpoint_path, path, batch_size, num_workers, output, debug):
 
     cuda = torch.cuda.is_available()
     if cuda:
+        logger.debug("CUDA is enabled")
         from torch.backends import cudnn
         cudnn.benchmark = True
 
     logger.debug("Setup test dataloader")
-    test_loader = get_test_data_loader(path, batch_size, num_workers, cuda=cuda)
+    test_loader, test_dataset = get_test_data_loader(dataset_path, batch_size, num_workers, cuda=cuda)
 
-    logger.debug("Setup model")
-    model = get_small_squeezenet_v1_1(num_classes=10)
-    model_name = model.__class__.__name__
+    logger.debug("Setup model: {}".format(checkpoint))
+    model = torch.load(checkpoint)
+    # model_name = model.__class__.__name__
     if cuda:
         model = model.cuda()
-
-    load_checkpoint(checkpoint_path, model)
 
     logger.debug("Setup tensorboard writer")
     writer = create_summary_writer(model, os.path.join(log_dir, "tensorboard"), cuda=cuda)
@@ -142,9 +154,31 @@ def run(checkpoint_path, path, batch_size, num_workers, output, debug):
                  resume=Events.ITERATION_STARTED,
                  pause=Events.ITERATION_COMPLETED)
 
-    logger.debug("Start evaluation")
+    indices = np.zeros((len(test_dataset), n_tta), dtype=np.int32)
+    y_probas_tta = np.zeros((len(test_dataset), 10, n_tta))
+    y_true = np.zeros((len(test_dataset), ), dtype=np.int32)
+
+    @inferencer.on(Events.EPOCH_COMPLETED)
+    def log_tta(engine):
+        logger.debug("TTA {} / {}".format(engine.state.epoch, n_tta))
+
+    @inferencer.on(Events.ITERATION_COMPLETED)
+    def save_results(engine):
+        output = engine.state.output
+        tta_index = engine.state.epoch - 1
+        start_index = ((engine.state.iteration - 1) % len(test_loader)) * batch_size
+        batch_indices = output['indices'].numpy()
+        batch_y_probas = output['y_pred'].numpy()
+        batch_y_true = output['y_true'].numpy()
+        end_index = min(start_index + batch_size, len(indices))
+        indices[start_index:end_index, tta_index] = batch_indices
+        y_probas_tta[start_index:end_index, :, tta_index] = batch_y_probas
+        if tta_index == 0:
+            y_true[start_index:end_index] = batch_y_true
+
+    logger.debug("Start inference")
     try:
-        inferencer.run(test_loader, max_epochs=1)
+        inferencer.run(test_loader, max_epochs=n_tta)
     except KeyboardInterrupt:
         logger.info("Catched KeyboardInterrupt -> exit")
     except Exception as e:  # noqa
@@ -157,6 +191,18 @@ def run(checkpoint_path, path, batch_size, num_workers, output, debug):
             except ImportError:
                 print("Failed to start IPython console")
 
+    # Check indices:
+    for i in range(n_tta - 1):
+        ind1 = indices[:, i]
+        ind2 = indices[:, i + 1]
+        assert (ind1 == ind2).all()
+
+    # Average probabilities:
+    y_probas = np.mean(y_probas_tta, axis=-1)
+    y_preds = np.argmax(y_probas, axis=-1)
+
+    logger.info("\n" + classification_report(y_true, y_preds))
+
     writer.close()
 
 
@@ -166,6 +212,8 @@ if __name__ == "__main__":
     parser.add_argument("checkpoint", type=str, help="Model checkpoint to load")
     parser.add_argument("--path", type=str, default=".",
                         help="Optional path to Cifar10 dataset")
+    parser.add_argument('--n_tta', type=int, default=5,
+                        help='Number of test time augmentations (default: 5)')
     parser.add_argument('--batch_size', type=int, default=64,
                         help='input batch size for testing (default: 64)')
     parser.add_argument('--num_workers', type=int, default=8,
@@ -176,4 +224,7 @@ if __name__ == "__main__":
                         help="Enable debugging")
 
     args = parser.parse_args()
-    run(args.checkpoint, args.path, args.batch_size, args.num_workers, args.output, args.debug)
+    run(args.checkpoint, args.path,
+        args.batch_size, args.num_workers,
+        args.n_tta,
+        args.output, args.debug)
