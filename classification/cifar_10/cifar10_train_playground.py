@@ -5,6 +5,7 @@ from argparse import ArgumentParser
 import random
 import logging
 from importlib import util
+
 import numpy as np
 
 from sklearn.model_selection import StratifiedKFold
@@ -191,7 +192,7 @@ def save_conf(logger, writer, model_name, imgaugs,
                 restart every: {restart_every}
                 restart factor: {restart_factor}
                 init lr factor: {init_lr_factor}
-            output: {output}        
+            Output folder: {output}        
     """.format(
         model=model_name,
         imgaugs=imgaugs,

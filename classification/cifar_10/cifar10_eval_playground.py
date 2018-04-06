@@ -4,6 +4,7 @@ import os
 from argparse import ArgumentParser
 import random
 import logging
+from importlib import util
 
 import numpy as np
 
@@ -30,14 +31,21 @@ random.seed(SEED)
 torch.manual_seed(SEED)
 
 
-def get_test_data_loader(path, batch_size, num_workers, cuda=True):
+def get_test_data_loader(path, imgaugs, batch_size, num_workers, cuda=True):
+
+    # Load imgaugs module:
+    spec = util.spec_from_file_location("imgaugs", imgaugs)
+    custom_module = util.module_from_spec(spec)
+    spec.loader.exec_module(custom_module)
+
+    test_imgaugs = getattr(custom_module, "test_imgaugs")
 
     test_data_transform = Compose([
-        Resize(42),
-        RandomHorizontalFlip(p=0.5),
-        RandomVerticalFlip(p=0.5),
-        ToTensor(),
-        Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
+        test_imgaugs +
+        [
+            ToTensor(),
+            Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
+        ]
     ])
 
     class IndexedDataset(Dataset):
@@ -56,11 +64,10 @@ def get_test_data_loader(path, batch_size, num_workers, cuda=True):
     test_loader = DataLoader(test_dataset, batch_size=batch_size,
                              shuffle=False, drop_last=False,
                              num_workers=num_workers, pin_memory=cuda)
-    return test_loader, test_dataset
+    return test_loader
 
 
-def create_logger(output, level=logging.INFO):
-    logger = logging.getLogger("Cifar10 Playground: Inference")
+def setup_logger(logger, output, level=logging.INFO):
     logger.setLevel(level)
     # create file handler which logs even debug messages
     fh = logging.FileHandler(os.path.join(output, "eval.log"))
@@ -75,17 +82,14 @@ def create_logger(output, level=logging.INFO):
     # add the handlers to the logger
     logger.addHandler(fh)
     logger.addHandler(ch)
-    return logger
 
 
-def create_summary_writer(model, log_dir, cuda):
-    writer = SummaryWriter(log_dir=log_dir)
+def write_model_graph(writer, model, cuda):
     try:
         dummy_input = to_variable(torch.rand(10, 3, 42, 42), cuda=cuda)
         writer.add_graph(model, dummy_input)
     except Exception as e:
         print("Failed to save model graph: {}".format(e))
-    return writer
 
 
 def create_inferencer(model, cuda=True):
@@ -110,7 +114,30 @@ def create_inferencer(model, cuda=True):
     return inferencer
 
 
-def run(checkpoint, dataset_path, batch_size, num_workers, n_tta, output, debug):
+def save_conf(logger, writer, model_name, imgaugs,
+        test_batch_size, num_workers,
+        n_tta, output):
+    conf_str = """        
+        Training configuration:
+            Model: {model}
+            Image augs: {imgaugs}
+            Test batch size: {test_batch_size}
+            Number of workers: {num_workers}
+            Number of TTA: {n_tta}
+            Output folder: {output}        
+    """.format(
+        model=model_name,
+        imgaugs=imgaugs,
+        test_batch_size=test_batch_size,
+        num_workers=num_workers,
+        n_tta=n_tta,
+        output=output
+    )
+    logger.info(conf_str)
+    writer.add_text('Configuration', conf_str)
+
+
+def run(checkpoint, dataset_path, imgaugs, batch_size, num_workers, n_tta, output, debug):
 
     print("--- Cifar10 Playground : Inference --- ")
 
@@ -123,7 +150,16 @@ def run(checkpoint, dataset_path, batch_size, num_workers, n_tta, output, debug)
     if debug:
         log_level = logging.DEBUG
         print("Activated debug mode")
-    logger = create_logger(log_dir, log_level)
+
+    logger = logging.getLogger("Cifar10 Playground: Inference")
+    setup_logger(logger, log_dir, log_level)
+
+    logger.debug("Setup tensorboard writer")
+    writer = SummaryWriter(log_dir=os.path.join(log_dir, "tensorboard"))
+
+    save_conf(logger, writer, checkpoint, imgaugs,
+        batch_size, num_workers,
+        n_tta, output)
 
     cuda = torch.cuda.is_available()
     if cuda:
