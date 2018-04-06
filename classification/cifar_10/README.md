@@ -1,6 +1,6 @@
 # CIFAR10 Playground
 
-Train and evaluate model with [ignite](https://github.com/pytorch/ignite)
+Train and evaluate models with [ignite](https://github.com/pytorch/ignite)
 
 ## Requirements
 
@@ -13,11 +13,18 @@ pip install --upgrade git+https://github.com/lanpa/tensorboard-pytorch.git
 pip install --upgrade numpy scikit-learn
 ```
 
+if you want to use NASNet-A Mobile, consider to install
+```bash
+pip install --upgrade git+https://github.com/Cadene/pretrained-models.pytorch.git
+```  
+
 ## Training
 
 Start training with a simple command:
 ```bash
-python cifar10_train_playground.py --output="cifar10_output"
+python cifar10_train_playground.py --output=cifar10_output
+# or more complicated command
+python cifar10_train_playground.py --output=cifar10_output --debug --model=vgg16_bn --lr=0.0005234 --gamma=0.98 --restart_every=20 --imgaugs=imgaugs_YCbCr.py
 ```
 for more options:
 ```bash

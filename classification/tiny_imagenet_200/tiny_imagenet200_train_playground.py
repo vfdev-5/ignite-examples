@@ -4,19 +4,21 @@ import os
 from argparse import ArgumentParser
 import random
 import logging
-from importlib import util
+
 import numpy as np
 
 from sklearn.model_selection import StratifiedKFold
 
 import torch
 from torch import nn
-from torch.optim import Adam, SGD
+from torch.optim import Adam
 from torch.utils.data import DataLoader
 from torch.utils.data.sampler import SubsetRandomSampler
 from torch.optim.lr_scheduler import ExponentialLR, ReduceLROnPlateau
 from torchvision.transforms import Compose, ToTensor, Normalize
-from torchvision.datasets import CIFAR10
+from torchvision.transforms import RandomVerticalFlip, RandomHorizontalFlip, RandomChoice, RandomAffine
+from torchvision.transforms import ColorJitter
+from torchvision.datasets import ImageFolder
 
 try:
     from tensorboardX import SummaryWriter
@@ -28,9 +30,7 @@ from ignite.metrics import CategoricalAccuracy, Loss, Precision, Recall
 from ignite.handlers import ModelCheckpoint, Timer, EarlyStopping
 from ignite._utils import to_variable, to_tensor
 
-from models.small_squeezenets_v1_1 import get_small_squeezenet_v1_1, SqueezeNetV11BN
-from models.small_vgg16_bn import get_small_vgg16_bn
-from models.small_nasnet_a_mobile import SmallNASNetAMobile
+from models import SqueezeNetV11BN
 from lr_schedulers import LRSchedulerWithRestart
 
 
@@ -39,15 +39,7 @@ random.seed(SEED)
 torch.manual_seed(SEED)
 
 MODEL_MAP = {
-    "squeezenet_v1_1": get_small_squeezenet_v1_1,
-    "squeezenet_v1_1_bn": SqueezeNetV11BN,
-    "vgg16_bn": get_small_vgg16_bn,
-    "nasnet_a_mobile": SmallNASNetAMobile
-}
-
-OPTIMIZER_MAP = {
-    "adam": Adam,
-    "sgd": SGD
+    "squeezenet_v1_1_bn": SqueezeNetV11BN
 }
 
 
@@ -68,37 +60,32 @@ def get_train_val_indices(data_loader, fold_index=0, n_splits=5):
             return train_indices, val_indices
 
 
-def get_data_loaders(dataset_path, imgaugs, train_batch_size, val_batch_size, num_workers, cuda=True):
+def get_data_loaders(dataset_path, train_batch_size, val_batch_size, num_workers, cuda=True):
+    train_data_transform = Compose([
+        RandomChoice(
+            [
+                RandomAffine(degrees=(-50, 50), scale=(0.95, 1.05), translate=(0.05, 0.05)),
+                RandomHorizontalFlip(p=0.5),
+                RandomVerticalFlip(p=0.5),
+            ]
+        ),
+        ColorJitter(hue=0.05),
+        ToTensor(),
+        Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
+    ])
 
-    # Load imgaugs module:
-    spec = util.spec_from_file_location("imgaugs", imgaugs)
-    custom_module = util.module_from_spec(spec)
-    spec.loader.exec_module(custom_module)
+    val_data_transform = Compose([
+        RandomHorizontalFlip(p=0.5),
+        RandomVerticalFlip(p=0.5),
+        ToTensor(),
+        Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
+    ])
 
-    train_imgaugs = getattr(custom_module, "train_imgaugs")
-    val_imgaugs = getattr(custom_module, "val_imgaugs")
-
-    train_data_transform = Compose(
-        train_imgaugs +
-        [
-            ToTensor(),
-            Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
-        ]
-    )
-
-    val_data_transform = Compose(
-        val_imgaugs +
-        [
-            ToTensor(),
-            Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
-        ]
-    )
-
-    train_dataset = CIFAR10(dataset_path, train=True, transform=train_data_transform, download=True)
-    val_dataset = CIFAR10(dataset_path, train=True, transform=val_data_transform, download=False)
+    train_dataset = ImageFolder(os.path.join(dataset_path, 'train'), transform=train_data_transform)
+    val_dataset = ImageFolder(os.path.join(dataset_path, 'train'), transform=val_data_transform)
 
     # Temporary dataset and dataloader to create train/val split
-    trainval_dataset = CIFAR10(dataset_path, train=True, transform=ToTensor(), download=False)
+    trainval_dataset = ImageFolder(os.path.join(dataset_path, 'train'), transform=ToTensor())
     trainval_loader = DataLoader(trainval_dataset, batch_size=train_batch_size,
                                  shuffle=False, drop_last=False,
                                  num_workers=num_workers, pin_memory=False)
@@ -132,12 +119,14 @@ def setup_logger(logger, output, level=logging.INFO):
     logger.addHandler(ch)
 
 
-def write_model_graph(writer, model, cuda):
+def create_summary_writer(model, log_dir, cuda):
+    writer = SummaryWriter(log_dir=log_dir)
     try:
-        dummy_input = to_variable(torch.rand(10, 3, 32, 32), cuda=cuda)
+        dummy_input = to_variable(torch.rand(10, 3, 64, 64), cuda=cuda)
         writer.add_graph(model, dummy_input)
     except Exception as e:
         print("Failed to save model graph: {}".format(e))
+    return writer
 
 
 def create_supervised_trainer(model, optimizer, loss_fn, metrics={}, cuda=False):
@@ -172,52 +161,12 @@ def create_supervised_trainer(model, optimizer, loss_fn, metrics={}, cuda=False)
     return trainer
 
 
-def save_conf(logger, writer, model_name, imgaugs,
+def run(path, model_name,
         train_batch_size, val_batch_size, num_workers,
-        epochs, optim,
-        lr, gamma, restart_every, restart_factor, init_lr_factor,
-        output):
-    conf_str = """        
-        Training configuration:
-            Model: {model}
-            Image augs: {imgaugs}
-            Train batch size: {train_batch_size}
-            Val batch size: {val_batch_size}
-            Number of workers: {num_workers}
-            Number of epochs: {epochs}
-            Optimizer: {optim}
-            Learning rate: {lr}
-            Exp lr scheduler gamma: {gamma}
-                restart every: {restart_every}
-                restart factor: {restart_factor}
-                init lr factor: {init_lr_factor}
-            output: {output}        
-    """.format(
-        model=model_name,
-        imgaugs=imgaugs,
-        train_batch_size=train_batch_size,
-        val_batch_size=val_batch_size,
-        num_workers=num_workers,
-        epochs=epochs,
-        optim=optim,
-        lr=lr,
-        gamma=gamma,
-        restart_every=restart_every,
-        restart_factor=restart_factor,
-        init_lr_factor=init_lr_factor,
-        output=output
-    )
-    logger.info(conf_str)
-    writer.add_text('Configuration', conf_str)
-
-
-def run(path, model_name, imgaugs,
-        train_batch_size, val_batch_size, num_workers,
-        epochs, optim,
-        lr, gamma, restart_every, restart_factor, init_lr_factor,
+        epochs, lr, gamma, restart_every, restart_factor, init_lr_factor,
         log_interval, output, debug):
 
-    print("--- Cifar10 Playground : Training --- ")
+    print("--- Tiny ImageNet 200 Playground : Training --- ")
 
     from datetime import datetime
     now = datetime.now()
@@ -230,17 +179,8 @@ def run(path, model_name, imgaugs,
         log_level = logging.DEBUG
         print("Activated debug mode")
 
-    logger = logging.getLogger("Cifar10 Playground: Train")
+    logger = logging.getLogger("Tiny ImageNet 200: Train")
     setup_logger(logger, log_dir, log_level)
-
-    logger.debug("Setup tensorboard writer")
-    writer = SummaryWriter(log_dir=os.path.join(log_dir, "tensorboard"))
-
-    save_conf(logger, writer, model_name, imgaugs,
-        train_batch_size, val_batch_size, num_workers,
-        epochs, optim,
-        lr, gamma, restart_every, restart_factor, init_lr_factor,
-        output)
 
     cuda = torch.cuda.is_available()
     if cuda:
@@ -251,21 +191,22 @@ def run(path, model_name, imgaugs,
 
     if not os.path.isfile(model_name):
         assert model_name in MODEL_MAP, "Model name not in {}".format(MODEL_MAP.keys())
-        model = MODEL_MAP[model_name](num_classes=10)
+        model = MODEL_MAP[model_name](num_classes=200)
     else:
         model = torch.load(model_name)
 
     model_name = model.__class__.__name__
     if cuda:
         model = model.cuda()
-    write_model_graph(writer, model=model, cuda=cuda)
 
     logger.debug("Setup train/val dataloaders")
-    train_loader, val_loader = get_data_loaders(path, imgaugs, train_batch_size, val_batch_size, num_workers, cuda=cuda)
+    train_loader, val_loader = get_data_loaders(path, train_batch_size, val_batch_size, num_workers, cuda=cuda)
+
+    logger.debug("Setup tensorboard writer")
+    writer = create_summary_writer(model, os.path.join(log_dir, "tensorboard"), cuda=cuda)
 
     logger.debug("Setup optimizer")
-    assert optim in OPTIMIZER_MAP, "Optimizer name not in {}".format(OPTIMIZER_MAP.keys())
-    optimizer = OPTIMIZER_MAP[optim](model.parameters(), lr=lr)
+    optimizer = Adam(model.parameters(), lr=lr)
 
     logger.debug("Setup criterion")
     criterion = nn.CrossEntropyLoss()
@@ -288,16 +229,16 @@ def run(path, model_name, imgaugs,
     trainer = create_supervised_trainer(model, optimizer, criterion,
                                         metrics={
                                             'accuracy': CategoricalAccuracy(output_transform=output_transform),
-                                            'precision': Precision(output_transform=output_transform),
-                                            'recall': Recall(output_transform=output_transform),
+                                            # 'precision': Precision(output_transform=output_transform),
+                                            # 'recall': Recall(output_transform=output_transform),
                                             'nll': Loss(criterion, output_transform=output_transform)
                                         },
                                         cuda=cuda)
     evaluator = create_supervised_evaluator(model,
                                             metrics={
                                                 'accuracy': CategoricalAccuracy(),
-                                                'precision': Precision(),
-                                                'recall': Recall(),
+                                                # 'precision': Precision(),
+                                                # 'recall': Recall(),
                                                 'nll': Loss(criterion)
                                             },
                                             cuda=cuda)
@@ -338,11 +279,11 @@ def run(path, model_name, imgaugs,
                     .format(engine.state.epoch, engine.state.metrics['accuracy'], engine.state.metrics['nll']))
         writer.add_scalar("training/avg_accuracy", engine.state.metrics['accuracy'], engine.state.epoch)
         writer.add_scalar("training/avg_loss", engine.state.metrics['nll'], engine.state.epoch)
-        for metric_name in ['precision', 'recall']:
-            value = engine.state.metrics[metric_name].cpu() if cuda else engine.state.metrics[metric_name]
-            avg_value = torch.mean(value)
-            writer.add_scalar("training/avg_{}".format(metric_name), avg_value, engine.state.epoch)
-            logger.info("   {} per class: {}".format(metric_name, value.numpy().tolist()))
+        # for metric_name in ['precision', 'recall']:
+        #     value = engine.state.metrics[metric_name].cpu() if cuda else engine.state.metrics[metric_name]
+        #     avg_value = torch.mean(value)
+        #     writer.add_scalar("training/avg_{}".format(metric_name), avg_value, engine.state.epoch)
+        #     # logger.info("   {} per class: {}".format(metric_name, value.numpy().tolist()))
 
     @trainer.on(Events.EPOCH_COMPLETED)
     def log_validation_results(engine):
@@ -354,11 +295,11 @@ def run(path, model_name, imgaugs,
         logger.info("Validation Results - Epoch: {}  Avg accuracy: {:.2f} Avg loss: {:.2f}"
                     .format(engine.state.epoch, avg_accuracy, avg_nll))
 
-        for metric_name in ['precision', 'recall']:
-            value = engine.state.metrics[metric_name].cpu() if cuda else engine.state.metrics[metric_name]
-            avg_value = torch.mean(engine.state.metrics[metric_name])
-            writer.add_scalar("validation/avg_{}".format(metric_name), avg_value, engine.state.epoch)
-            logger.info("   {} per class: {}".format(metric_name, value.numpy().tolist()))
+        # for metric_name in ['precision', 'recall']:
+        #     value = engine.state.metrics[metric_name].cpu() if cuda else engine.state.metrics[metric_name]
+        #     avg_value = torch.mean(value)
+        #     writer.add_scalar("validation/avg_{}".format(metric_name), avg_value, engine.state.epoch)
+        #     # logger.info("   {} per class: {}".format(metric_name, value.numpy().tolist()))
 
     @evaluator.on(Events.COMPLETED)
     def update_reduce_on_plateau(engine):
@@ -376,7 +317,7 @@ def run(path, model_name, imgaugs,
         return -val_loss
 
     # Setup early stopping:
-    handler = EarlyStopping(patience=20, score_function=score_function, trainer=trainer)
+    handler = EarlyStopping(patience=10, score_function=score_function, trainer=trainer)
     setup_logger(handler._logger, log_dir, log_level)
     evaluator.add_event_handler(Events.COMPLETED, handler)
 
@@ -406,15 +347,15 @@ def run(path, model_name, imgaugs,
             except ImportError:
                 print("Failed to start IPython console")
 
-    logger.debug("Training is ended")
     writer.close()
 
 
 if __name__ == "__main__":
 
     parser = ArgumentParser()
-    parser.add_argument("--path", type=str, default=".",
-                        help="Optional path to Cifar10 dataset (default: .)")
+    parser.add_argument('dataset_path', type=str,
+                        help="Path to Tiny ImageNet dataset. " +
+                             "It can be downloaded from : http://cs231n.stanford.edu/tiny-imagenet-200.zip")
     parser.add_argument("--model", type=str,
                         default="squeezenet_v1_1",
                         help="Model choice: \n"
@@ -423,14 +364,6 @@ if __name__ == "__main__":
                              "- vgg16_bn \n "
                              "- nasnet_a_mobile \n "
                              "or a path to saved model (default: squeezenet_v1_1)")
-    parser.add_argument('--imgaugs', type=str,
-                        choices=[
-                            "imgaugs.py",
-                            "imgaugs_affine.py",
-                            "imgaugs_RGB.py",
-                            "imgaugs_YCbCr.py",
-                            "imgaugs_LAB.py"], default="imgaugs.py",
-                        help='image augmentations module (default: imgaugs.py)')
     parser.add_argument('--batch_size', type=int, default=64,
                         help='input batch size for training (default: 64)')
     parser.add_argument('--num_workers', type=int, default=8,
@@ -439,8 +372,6 @@ if __name__ == "__main__":
                         help='input batch size for validation (default: 100)')
     parser.add_argument('--epochs', type=int, default=50,
                         help='number of epochs to train (default: 50)')
-    parser.add_argument('--optim', type=str, choices=["adam", "sgd"], default="adam",
-                        help='optimizer choice: adam or sgd')
     parser.add_argument('--lr', type=float, default=0.0001,
                         help='learning rate (default: 0.01)')
     parser.add_argument('--gamma', type=float, default=0.9,
@@ -459,11 +390,9 @@ if __name__ == "__main__":
                         help="Enable debugging")
     args = parser.parse_args()
 
-    run(args.path, args.model,
-        args.imgaugs,
+    run(args.dataset_path, args.model,
         args.batch_size, args.val_batch_size, args.num_workers,
         args.epochs,
-        args.optim,
         args.lr, args.gamma, args.restart_every, args.restart_factor, args.init_lr_factor,
         args.log_interval, args.output,
         args.debug)

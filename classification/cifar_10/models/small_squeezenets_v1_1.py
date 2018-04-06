@@ -1,3 +1,4 @@
+# Code is adapted from torchvision.models.squeezenet
 import torch
 from torch.nn import Conv2d, AdaptiveAvgPool2d, Sequential, Module, ReLU, BatchNorm2d, MaxPool2d, Dropout
 from torch.nn.init import normal, kaiming_uniform
@@ -20,10 +21,6 @@ def get_small_squeezenet_v1_1(num_classes):
     layers[-1] = AdaptiveAvgPool2d(1)
     model.classifier = Sequential(*layers)
     return model
-
-
-def get_small_squeezenet_v1_1_bn(num_classes):
-    return SqueezeNetV11BN(num_classes)
 
 
 class FireBN(Module):
