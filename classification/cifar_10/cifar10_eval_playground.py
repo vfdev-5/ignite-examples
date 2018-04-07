@@ -248,13 +248,7 @@ if __name__ == "__main__":
                         help="Optional path to Cifar10 dataset")
     parser.add_argument('--n_tta', type=int, default=5,
                         help='Number of test time augmentations (default: 5)')
-    parser.add_argument('--imgaugs', type=str,
-                        choices=[
-                            "imgaugs.py",
-                            "imgaugs_affine.py",
-                            "imgaugs_RGB.py",
-                            "imgaugs_YCbCr.py",
-                            "imgaugs_LAB.py"], default="imgaugs.py",
+    parser.add_argument('--imgaugs', type=str, default="imgaugs.py",
                         help='image augmentations module (default: imgaugs.py)')
     parser.add_argument('--batch_size', type=int, default=64,
                         help='input batch size for testing (default: 64)')
