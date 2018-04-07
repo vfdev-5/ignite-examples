@@ -72,7 +72,8 @@ def get_train_val_indices(data_loader, fold_index=0, n_splits=5):
 def get_data_loaders(dataset_path, imgaugs, train_batch_size, val_batch_size, num_workers, cuda=True):
 
     # Load imgaugs module:
-    spec = util.spec_from_file_location("imgaugs", imgaugs)
+    this_dir = os.path.dirname(__file__)
+    spec = util.spec_from_file_location("imgaugs", os.path.join(this_dir, imgaugs))
     custom_module = util.module_from_spec(spec)
     spec.loader.exec_module(custom_module)
 
@@ -241,10 +242,11 @@ def run(path, model_name, imgaugs,
         train_batch_size, val_batch_size, num_workers,
         epochs, optim,
         lr, gamma, restart_every, restart_factor, init_lr_factor,
-        output)
+        log_dir)
 
     cuda = torch.cuda.is_available()
     if cuda:
+        logger.debug("CUDA is enabled")
         from torch.backends import cudnn
         cudnn.benchmark = True
 
@@ -278,7 +280,7 @@ def run(path, model_name, imgaugs,
                                                    restart_every=restart_every,
                                                    restart_factor=restart_factor,
                                                    init_lr_factor=init_lr_factor)
-    reduce_on_plateau = ReduceLROnPlateau(optimizer, mode='min', factor=0.2, patience=5, verbose=True)
+    reduce_on_plateau = ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=5, verbose=True)
 
     def output_transform(output):
         y_pred = output['y_pred']
@@ -388,8 +390,7 @@ def run(path, model_name, imgaugs,
                               score_function=score_function,
                               n_saved=5,
                               atomic=True,
-                              create_dir=True,
-                              exist_ok=True)
+                              create_dir=True)
     evaluator.add_event_handler(Events.COMPLETED, handler, {model_name: model})
 
     logger.debug("Start training: {} epochs".format(epochs))
@@ -414,7 +415,7 @@ def run(path, model_name, imgaugs,
 if __name__ == "__main__":
 
     parser = ArgumentParser()
-    parser.add_argument("--path", type=str, default=".",
+    parser.add_argument("--dataset_path", type=str, default=".",
                         help="Optional path to Cifar10 dataset (default: .)")
     parser.add_argument("--model", type=str,
                         default="squeezenet_v1_1",
@@ -424,14 +425,8 @@ if __name__ == "__main__":
                              "- vgg16_bn \n "
                              "- nasnet_a_mobile \n "
                              "or a path to saved model (default: squeezenet_v1_1)")
-    parser.add_argument('--imgaugs', type=str,
-                        choices=[
-                            "imgaugs.py",
-                            "imgaugs_affine.py",
-                            "imgaugs_RGB.py",
-                            "imgaugs_YCbCr.py",
-                            "imgaugs_LAB.py"], default="imgaugs.py",
-                        help='image augmentations module (default: imgaugs.py)')
+    parser.add_argument('--imgaugs', type=str, default="imgaugs.py",
+                        help='image augmentations module, python file (default: imgaugs.py)')
     parser.add_argument('--batch_size', type=int, default=64,
                         help='input batch size for training (default: 64)')
     parser.add_argument('--num_workers', type=int, default=8,
@@ -460,7 +455,7 @@ if __name__ == "__main__":
                         help="Enable debugging")
     args = parser.parse_args()
 
-    run(args.path, args.model,
+    run(args.dataset_path, args.model,
         args.imgaugs,
         args.batch_size, args.val_batch_size, args.num_workers,
         args.epochs,

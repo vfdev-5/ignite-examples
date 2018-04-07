@@ -12,8 +12,7 @@ from sklearn.metrics import classification_report
 
 import torch
 from torch.utils.data import DataLoader, Dataset
-from torchvision.transforms import Compose, ToTensor, Normalize, Resize
-from torchvision.transforms import RandomVerticalFlip, RandomHorizontalFlip
+from torchvision.transforms import Compose, ToTensor, Normalize
 from torchvision.datasets import CIFAR10
 
 try:
@@ -34,19 +33,20 @@ torch.manual_seed(SEED)
 def get_test_data_loader(path, imgaugs, batch_size, num_workers, cuda=True):
 
     # Load imgaugs module:
-    spec = util.spec_from_file_location("imgaugs", imgaugs)
+    this_dir = os.path.dirname(__file__)
+    spec = util.spec_from_file_location("imgaugs", os.path.join(this_dir, imgaugs))
     custom_module = util.module_from_spec(spec)
     spec.loader.exec_module(custom_module)
 
     test_imgaugs = getattr(custom_module, "test_imgaugs")
 
-    test_data_transform = Compose([
+    test_data_transform = Compose(
         test_imgaugs +
         [
             ToTensor(),
             Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
         ]
-    ])
+    )
 
     class IndexedDataset(Dataset):
 
@@ -159,7 +159,7 @@ def run(checkpoint, dataset_path, imgaugs, batch_size, num_workers, n_tta, outpu
 
     save_conf(logger, writer, checkpoint, imgaugs,
         batch_size, num_workers,
-        n_tta, output)
+        n_tta, log_dir)
 
     cuda = torch.cuda.is_available()
     if cuda:
@@ -167,17 +167,14 @@ def run(checkpoint, dataset_path, imgaugs, batch_size, num_workers, n_tta, outpu
         from torch.backends import cudnn
         cudnn.benchmark = True
 
-    logger.debug("Setup test dataloader")
-    test_loader, test_dataset = get_test_data_loader(dataset_path, batch_size, num_workers, cuda=cuda)
-
     logger.debug("Setup model: {}".format(checkpoint))
     model = torch.load(checkpoint)
-    # model_name = model.__class__.__name__
     if cuda:
         model = model.cuda()
+    write_model_graph(writer, model=model, cuda=cuda)
 
-    logger.debug("Setup tensorboard writer")
-    writer = create_summary_writer(model, os.path.join(log_dir, "tensorboard"), cuda=cuda)
+    logger.debug("Setup test dataloader")
+    test_loader = get_test_data_loader(dataset_path, imgaugs, batch_size, num_workers, cuda=cuda)
 
     logger.debug("Setup ignite trainer and evaluator")
     inferencer = create_inferencer(model, cuda=cuda)
@@ -190,9 +187,10 @@ def run(checkpoint, dataset_path, imgaugs, batch_size, num_workers, n_tta, outpu
                  resume=Events.ITERATION_STARTED,
                  pause=Events.ITERATION_COMPLETED)
 
-    indices = np.zeros((len(test_dataset), n_tta), dtype=np.int32)
-    y_probas_tta = np.zeros((len(test_dataset), 10, n_tta))
-    y_true = np.zeros((len(test_dataset), ), dtype=np.int32)
+    n_samples = len(test_loader.dataset)
+    indices = np.zeros((n_samples, n_tta), dtype=np.int32)
+    y_probas_tta = np.zeros((n_samples, 10, n_tta))
+    y_true = np.zeros((n_samples, ), dtype=np.int32)
 
     @inferencer.on(Events.EPOCH_COMPLETED)
     def log_tta(engine):
@@ -250,6 +248,14 @@ if __name__ == "__main__":
                         help="Optional path to Cifar10 dataset")
     parser.add_argument('--n_tta', type=int, default=5,
                         help='Number of test time augmentations (default: 5)')
+    parser.add_argument('--imgaugs', type=str,
+                        choices=[
+                            "imgaugs.py",
+                            "imgaugs_affine.py",
+                            "imgaugs_RGB.py",
+                            "imgaugs_YCbCr.py",
+                            "imgaugs_LAB.py"], default="imgaugs.py",
+                        help='image augmentations module (default: imgaugs.py)')
     parser.add_argument('--batch_size', type=int, default=64,
                         help='input batch size for testing (default: 64)')
     parser.add_argument('--num_workers', type=int, default=8,
@@ -258,9 +264,10 @@ if __name__ == "__main__":
                         help="directory to store best models")
     parser.add_argument("--debug", action="store_true", default=0,
                         help="Enable debugging")
-
     args = parser.parse_args()
+
     run(args.checkpoint, args.path,
+        args.imgaugs,
         args.batch_size, args.num_workers,
         args.n_tta,
         args.output, args.debug)

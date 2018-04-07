@@ -1,10 +1,11 @@
 
-from torchvision.transforms import RandomVerticalFlip, RandomHorizontalFlip
-from torchvision.transforms.functional import _is_pil_image
+from torchvision.transforms import RandomVerticalFlip, RandomHorizontalFlip, ColorJitter
+
 
 train_imgaugs = [
     RandomHorizontalFlip(p=0.5),
     RandomVerticalFlip(p=0.5),
+    ColorJitter(hue=0.1, brightness=0.1),
 ]
 
 
@@ -13,3 +14,4 @@ val_imgaugs = [
     RandomVerticalFlip(p=0.5),
 ]
 
+test_imgaugs = val_imgaugs
