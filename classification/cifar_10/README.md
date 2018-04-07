@@ -43,6 +43,11 @@ The output folder will contain folders of with training runs:
 tensorboard --logdir=cifar10_output
 ``` 
 
+| ![tb_scalars](imgs/tb_scalars.png) | ![tb_scalars](imgs/tb_text.png) |
+| --- | --- | 
+
+
+
 ## Evaluation
 
 Produce classification report (precision, recall, f1-score) like this
