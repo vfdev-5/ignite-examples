@@ -8,7 +8,7 @@ More examples with [ignite](https://github.com/pytorch/ignite)
 ### Classification
 
 - [Cifar10](classification/cifar_10/README.md)    
-- Tiny imagenet 200
+- [Tiny imagenet 200](classification/tiny_imagenet_200/README.md)
 - iMaterialist Challenge (Furniture) at FGVC5
 
 
@@ -17,6 +17,4 @@ More examples with [ignite](https://github.com/pytorch/ignite)
 
 
 ### Segmentation
-
-- 
 
