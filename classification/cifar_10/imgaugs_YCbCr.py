@@ -1,5 +1,5 @@
 
-from torchvision.transforms import RandomVerticalFlip, RandomHorizontalFlip, ColorJitter
+from torchvision.transforms import RandomVerticalFlip, RandomHorizontalFlip, ColorJitter, ToTensor, Normalize
 from torchvision.transforms.functional import _is_pil_image
 
 
@@ -24,19 +24,24 @@ class ConvertColorspace(object):
         return self.__class__.__name__ + '(mode={})'.format(self.mode)
 
 
-train_imgaugs = [
+train_data_transform = [
     RandomHorizontalFlip(p=0.5),
     RandomVerticalFlip(p=0.5),
     ColorJitter(hue=0.1, brightness=0.1),
     ConvertColorspace("YCbCr"),
+    ToTensor(),
+    Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
 ]
 
 
-val_imgaugs = [
+
+val_data_transform = [
     RandomHorizontalFlip(p=0.5),
     RandomVerticalFlip(p=0.5),
     ConvertColorspace("YCbCr"),
+    ToTensor(),
+    Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
 ]
 
 
-test_imgaugs = val_imgaugs
+test_data_transform = val_data_transform

@@ -16,7 +16,7 @@ from torch.optim import Adam, SGD
 from torch.utils.data import DataLoader
 from torch.utils.data.sampler import SubsetRandomSampler
 from torch.optim.lr_scheduler import ExponentialLR, ReduceLROnPlateau
-from torchvision.transforms import Compose, ToTensor, Normalize
+from torchvision.transforms import Compose, ToTensor
 from torchvision.datasets import CIFAR10
 
 try:
@@ -77,24 +77,11 @@ def get_data_loaders(dataset_path, imgaugs, train_batch_size, val_batch_size, nu
     custom_module = util.module_from_spec(spec)
     spec.loader.exec_module(custom_module)
 
-    train_imgaugs = getattr(custom_module, "train_imgaugs")
-    val_imgaugs = getattr(custom_module, "val_imgaugs")
+    train_data_transform = getattr(custom_module, "train_data_transform")
+    val_data_transform = getattr(custom_module, "val_data_transform")
 
-    train_data_transform = Compose(
-        train_imgaugs +
-        [
-            ToTensor(),
-            Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
-        ]
-    )
-
-    val_data_transform = Compose(
-        val_imgaugs +
-        [
-            ToTensor(),
-            Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
-        ]
-    )
+    train_data_transform = Compose(train_data_transform)
+    val_data_transform = Compose(val_data_transform)
 
     train_dataset = CIFAR10(dataset_path, train=True, transform=train_data_transform, download=True)
     val_dataset = CIFAR10(dataset_path, train=True, transform=val_data_transform, download=False)
@@ -175,10 +162,11 @@ def create_supervised_trainer(model, optimizer, loss_fn, metrics={}, cuda=False)
 
 
 def save_conf(logger, writer, model_name, imgaugs,
-        train_batch_size, val_batch_size, num_workers,
-        epochs, optim,
-        lr, gamma, restart_every, restart_factor, init_lr_factor,
-        output):
+              train_batch_size, val_batch_size, num_workers,
+              epochs, optim,
+              lr, lr_update_every, gamma, restart_every, restart_factor, init_lr_factor,
+              lr_reduce_patience,
+              output):
     conf_str = """        
         Training configuration:
             Model: {model}
@@ -189,10 +177,12 @@ def save_conf(logger, writer, model_name, imgaugs,
             Number of epochs: {epochs}
             Optimizer: {optim}
             Learning rate: {lr}
+            Learning rate update every : {lr_update_every} epoch(s)
             Exp lr scheduler gamma: {gamma}
                 restart every: {restart_every}
                 restart factor: {restart_factor}
                 init lr factor: {init_lr_factor}
+            Reduce on plateau: {lr_reduce_patience}
             Output folder: {output}        
     """.format(
         model=model_name,
@@ -203,10 +193,12 @@ def save_conf(logger, writer, model_name, imgaugs,
         epochs=epochs,
         optim=optim,
         lr=lr,
+        lr_update_every=lr_update_every,
         gamma=gamma,
         restart_every=restart_every,
         restart_factor=restart_factor,
         init_lr_factor=init_lr_factor,
+        lr_reduce_patience=lr_reduce_patience,
         output=output
     )
     logger.info(conf_str)
@@ -216,7 +208,8 @@ def save_conf(logger, writer, model_name, imgaugs,
 def run(path, model_name, imgaugs,
         train_batch_size, val_batch_size, num_workers,
         epochs, optim,
-        lr, gamma, restart_every, restart_factor, init_lr_factor,
+        lr, lr_update_every, gamma, restart_every, restart_factor, init_lr_factor,
+        lr_reduce_patience,
         log_interval, output, debug):
 
     print("--- Cifar10 Playground : Training --- ")
@@ -239,10 +232,11 @@ def run(path, model_name, imgaugs,
     writer = SummaryWriter(log_dir=os.path.join(log_dir, "tensorboard"))
 
     save_conf(logger, writer, model_name, imgaugs,
-        train_batch_size, val_batch_size, num_workers,
-        epochs, optim,
-        lr, gamma, restart_every, restart_factor, init_lr_factor,
-        log_dir)
+              train_batch_size, val_batch_size, num_workers,
+              epochs, optim,
+              lr, lr_update_every, gamma, restart_every, restart_factor, init_lr_factor,
+              lr_reduce_patience,
+              log_dir)
 
     cuda = torch.cuda.is_available()
     if cuda:
@@ -280,7 +274,7 @@ def run(path, model_name, imgaugs,
                                                    restart_every=restart_every,
                                                    restart_factor=restart_factor,
                                                    init_lr_factor=init_lr_factor)
-    reduce_on_plateau = ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=5, verbose=True)
+    reduce_on_plateau = ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=lr_reduce_patience, verbose=True)
 
     def output_transform(output):
         y_pred = output['y_pred']
@@ -325,12 +319,19 @@ def run(path, model_name, imgaugs,
 
     @trainer.on(Events.EPOCH_STARTED)
     def update_lr_schedulers(engine):
-        lr_scheduler_restarts.step()
-        lrs = lr_scheduler_restarts.get_lr()
-        if len(lrs) == 1:
-            writer.add_scalar("learning_rate", lrs[0], engine.state.epoch)
+        if (engine.state.epoch - 1) % lr_update_every == 0:
+            lr_scheduler_restarts.step()
+
+    @trainer.on(Events.EPOCH_STARTED)
+    def log_lrs(engine):
+        if len(optimizer.param_groups) == 1:
+            lr = float(optimizer.param_groups[0]['lr'])
+            writer.add_scalar("learning_rate", lr, engine.state.epoch)
+            logger.debug("Learning rate: {}".format(lr))
         else:
-            for i, lr in enumerate(lrs):
+            for i, param_group in enumerate(optimizer.param_groups):
+                lr = float(param_group['lr'])
+                logger.debug("Learning rate (group {}): {}".format(i, lr))
                 writer.add_scalar("learning_rate_group_{}".format(i), lr, engine.state.epoch)
 
     @trainer.on(Events.EPOCH_COMPLETED)
@@ -345,7 +346,7 @@ def run(path, model_name, imgaugs,
             value = engine.state.metrics[metric_name].cpu() if cuda else engine.state.metrics[metric_name]
             avg_value = torch.mean(value)
             writer.add_scalar("training/avg_{}".format(metric_name), avg_value, engine.state.epoch)
-            logger.info("   {} per class: {}".format(metric_name, value.numpy().tolist()))
+            logger.debug("   {} per class: {}".format(metric_name, value.numpy().tolist()))
 
     @trainer.on(Events.EPOCH_COMPLETED)
     def log_validation_results(engine):
@@ -361,15 +362,10 @@ def run(path, model_name, imgaugs,
             value = engine.state.metrics[metric_name].cpu() if cuda else engine.state.metrics[metric_name]
             avg_value = torch.mean(engine.state.metrics[metric_name])
             writer.add_scalar("validation/avg_{}".format(metric_name), avg_value, engine.state.epoch)
-            logger.info("   {} per class: {}".format(metric_name, value.numpy().tolist()))
+            logger.debug("   {} per class: {}".format(metric_name, value.numpy().tolist()))
 
     @evaluator.on(Events.COMPLETED)
     def update_reduce_on_plateau(engine):
-        val_loss = engine.state.metrics['nll']
-        reduce_on_plateau.step(val_loss)
-
-    @evaluator.on(Events.COMPLETED)
-    def update_early_stopping(engine):
         val_loss = engine.state.metrics['nll']
         reduce_on_plateau.step(val_loss)
 
@@ -379,7 +375,7 @@ def run(path, model_name, imgaugs,
         return -val_loss
 
     # Setup early stopping:
-    handler = EarlyStopping(patience=20, score_function=score_function, trainer=trainer)
+    handler = EarlyStopping(patience=25, score_function=score_function, trainer=trainer)
     setup_logger(handler._logger, log_dir, log_level)
     evaluator.add_event_handler(Events.COMPLETED, handler)
 
@@ -439,6 +435,8 @@ if __name__ == "__main__":
                         help='optimizer choice: adam or sgd')
     parser.add_argument('--lr', type=float, default=0.0001,
                         help='learning rate (default: 0.01)')
+    parser.add_argument('--lr_update_every', type=int, default=1,
+                        help='learning rate update every `lr_update_every` epoch (default: 1)')
     parser.add_argument('--gamma', type=float, default=0.9,
                         help='learning rate exponential scheduler gamma (default: 0.95)')
     parser.add_argument('--restart_every', type=float, default=10,
@@ -447,6 +445,8 @@ if __name__ == "__main__":
                         help='factor to rescale `restart_every` after each restart (default: 1.5)')
     parser.add_argument('--init_lr_factor', type=float, default=0.5,
                         help='factor to rescale base lr after each restart (default: 0.5)')
+    parser.add_argument('--lr_reduce_patience', type=int, default=10,
+                        help='reduce on plateau patience in epochs (default: 10)')
     parser.add_argument('--log_interval', type=int, default=100,
                         help='how many batches to wait before logging training status')
     parser.add_argument("--output", type=str, default="output",
@@ -460,6 +460,7 @@ if __name__ == "__main__":
         args.batch_size, args.val_batch_size, args.num_workers,
         args.epochs,
         args.optim,
-        args.lr, args.gamma, args.restart_every, args.restart_factor, args.init_lr_factor,
+        args.lr, args.lr_update_every, args.gamma, args.restart_every, args.restart_factor, args.init_lr_factor,
+        args.lr_reduce_patience,
         args.log_interval, args.output,
         args.debug)

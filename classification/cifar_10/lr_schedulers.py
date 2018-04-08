@@ -41,6 +41,9 @@ class LRSchedulerWithRestart(_LRScheduler):
         # super(LRSchedulerWithRestart, self).__init__(optimizer, last_epoch)
 
     def get_lr(self):
+        return self.scheduler.get_lr()
+
+    def step(self, epoch=None):
         self._t += 1
         if self.restart_every > 0 and self.scheduler.last_epoch > 0 and \
                 self._t % self.restart_every == 0:
@@ -48,11 +51,7 @@ class LRSchedulerWithRestart(_LRScheduler):
             self.restart_every = int(self.restart_every * self.restart_factor)
             self.scheduler.base_lrs = [lr * self.init_lr_factor for lr in self.scheduler.base_lrs]
             if self.verbose:
-                print("\LRSchedulerWithRestart: restart lr at epoch %i, next restart at %i"
-                      % (self.last_epoch, self.last_epoch + self.restart_every))
+                print("LRSchedulerWithRestart: restart lr at epoch %i, next restart at %i"
+                      % (self.scheduler.last_epoch, self.scheduler.last_epoch + self.restart_every))
 
-        self.scheduler.last_epoch = self._t
-        return self.scheduler.get_lr()
-
-    def step(self, epoch=None):
-        self.scheduler.step(epoch)
+        self.scheduler.step(self._t)
