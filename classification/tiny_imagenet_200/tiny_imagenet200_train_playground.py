@@ -242,7 +242,7 @@ def run(config_file):
         logger.debug("CUDA is enabled")
         from torch.backends import cudnn
         cudnn.benchmark = True
-        model.cuda()
+        model = model.cuda()
 
     write_model_graph(writer, model=model, cuda=cuda)
 

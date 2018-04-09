@@ -10,32 +10,22 @@ Dataset [download link](http://cs231n.stanford.edu/tiny-imagenet-200.zip)
 We need PyTorch (can be installed from http://pytorch.org/) and the following dependencies:
 
 ```bash
-pip install --upgrade git+https://github.com/pytorch/vision.git
-pip install --upgrade git+https://github.com/pytorch/ignite.git
-pip install --upgrade git+https://github.com/lanpa/tensorboard-pytorch.git
-pip install --upgrade numpy scikit-learn
+pip install --upgrade -r requirements.txt
 ```
-
-if you want to use NASNet-A Mobile, consider to install
-```bash
-pip install --upgrade git+https://github.com/Cadene/pretrained-models.pytorch.git
-```  
 
 ## Training
 
-Start training with a simple command:
+Checkout training configuration, for example, `configs/train_vgg16_bn_basic.py` and update paths.
+Next, start training with a simple command:
 ```bash
-python tiny_imagenet200_train_playground.py --output=tiny_imagenet200_output
-```
-for more options:
-```bash
-ptyhon tiny_imagenet200_train_playground.py --help
+python tiny_imagenet200_train_playground.py configs/train_vgg16_bn_basic.py
 ```
 
 The output folder will contain folders of with training runs:
 - `training_YYYYmmDD_HHMM`
     - `train.log` : training log
     - 5 best models, `model_*.pth`
+    - 1 last model, `checkpoint_*.pth`
     - tensorboard logs
 
 ### TensorboardX training monitoring

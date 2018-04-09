@@ -276,7 +276,9 @@ def run(path, model_name, imgaugs,
                                                    restart_every=restart_every,
                                                    restart_factor=restart_factor,
                                                    init_lr_factor=init_lr_factor)
-    reduce_on_plateau = ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=lr_reduce_patience, verbose=True)
+    reduce_on_plateau = ReduceLROnPlateau(optimizer, mode='min', factor=0.1,
+                                          patience=lr_reduce_patience,
+                                          threshold=0.01, verbose=True)
 
     def output_transform(output):
         y_pred = output['y_pred']

@@ -14,7 +14,7 @@ OUTPUT_PATH = "/home/project/tiny_imagenet200_output"
 DATASET_PATH = "/home/local_data/tiny-imagenet-200/"
 TRAINVAL_SPLIT = {
     'fold_index': 0,
-    'n_splits': 7
+    'n_splits': 5
 }
 
 MODEL = get_small_vgg16_bn(200)
@@ -22,14 +22,14 @@ MODEL = get_small_vgg16_bn(200)
 N_EPOCHS = 100
 
 BATCH_SIZE = 128
-VAL_BATCH_SIZE = 100
+VAL_BATCH_SIZE = 128
 NUM_WORKERS = 8
 
 OPTIM = SGD(MODEL.parameters(), lr=0.1)
 
-LR_SCHEDULERS = [
-    MultiStepLR(OPTIM, milestones=[55, 70, 80, 90, 100], gamma=0.5)
-]
+# LR_SCHEDULERS = [
+#     MultiStepLR(OPTIM, milestones=[55, 70, 80, 90, 100], gamma=0.5)
+# ]
 
 TRAIN_TRANSFORMS = [
     RandomCrop(size=64, padding=10),
@@ -48,11 +48,11 @@ VAL_TRANSFORMS = [
     GlobalContrastNormalize(scale=55.0)
 ]
 
-# REDUCE_LR_ON_PLATEAU = ReduceLROnPlateau(OPTIM, mode='min', factor=0.1, patience=5, verbose=True)
+REDUCE_LR_ON_PLATEAU = ReduceLROnPlateau(OPTIM, mode='min', factor=0.5, patience=5, threshold=0.05, verbose=True)
 
-# EARLY_STOPPING_KWARGS = {
-#     'patience': 20,
-#     # 'score_function': None
-# }
+EARLY_STOPPING_KWARGS = {
+    'patience': 30,
+    # 'score_function': None
+}
 
 LOG_INTERVAL = 100
