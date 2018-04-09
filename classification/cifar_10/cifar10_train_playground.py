@@ -165,7 +165,7 @@ def save_conf(logger, writer, model_name, imgaugs,
               train_batch_size, val_batch_size, num_workers,
               epochs, optim,
               lr, lr_update_every, gamma, restart_every, restart_factor, init_lr_factor,
-              lr_reduce_patience,
+              lr_reduce_patience, early_stop_patience,
               output):
     conf_str = """        
         Training configuration:
@@ -183,6 +183,7 @@ def save_conf(logger, writer, model_name, imgaugs,
                 restart factor: {restart_factor}
                 init lr factor: {init_lr_factor}
             Reduce on plateau: {lr_reduce_patience}
+            Early stopping patience: {early_stop_patience}
             Output folder: {output}        
     """.format(
         model=model_name,
@@ -199,6 +200,7 @@ def save_conf(logger, writer, model_name, imgaugs,
         restart_factor=restart_factor,
         init_lr_factor=init_lr_factor,
         lr_reduce_patience=lr_reduce_patience,
+        early_stop_patience=early_stop_patience,
         output=output
     )
     logger.info(conf_str)
@@ -209,7 +211,7 @@ def run(path, model_name, imgaugs,
         train_batch_size, val_batch_size, num_workers,
         epochs, optim,
         lr, lr_update_every, gamma, restart_every, restart_factor, init_lr_factor,
-        lr_reduce_patience,
+        lr_reduce_patience, early_stop_patience,
         log_interval, output, debug):
 
     print("--- Cifar10 Playground : Training --- ")
@@ -235,7 +237,7 @@ def run(path, model_name, imgaugs,
               train_batch_size, val_batch_size, num_workers,
               epochs, optim,
               lr, lr_update_every, gamma, restart_every, restart_factor, init_lr_factor,
-              lr_reduce_patience,
+              lr_reduce_patience, early_stop_patience,
               log_dir)
 
     cuda = torch.cuda.is_available()
@@ -375,19 +377,27 @@ def run(path, model_name, imgaugs,
         return -val_loss
 
     # Setup early stopping:
-    handler = EarlyStopping(patience=25, score_function=score_function, trainer=trainer)
+    handler = EarlyStopping(patience=early_stop_patience, score_function=score_function, trainer=trainer)
     setup_logger(handler._logger, log_dir, log_level)
     evaluator.add_event_handler(Events.COMPLETED, handler)
 
     # Setup model checkpoint:
-    handler = ModelCheckpoint(log_dir,
-                              filename_prefix="model",
-                              score_name="val_loss",
-                              score_function=score_function,
-                              n_saved=5,
-                              atomic=True,
-                              create_dir=True)
-    evaluator.add_event_handler(Events.COMPLETED, handler, {model_name: model})
+    best_model_saver = ModelCheckpoint(log_dir,
+                                       filename_prefix="model",
+                                       score_name="val_loss",
+                                       score_function=score_function,
+                                       n_saved=5,
+                                       atomic=True,
+                                       create_dir=True)
+    evaluator.add_event_handler(Events.COMPLETED, best_model_saver, {model_name: model})
+
+    last_model_saver = ModelCheckpoint(log_dir,
+                                       filename_prefix="checkpoint",
+                                       save_interval=1,
+                                       n_saved=1,
+                                       atomic=True,
+                                       create_dir=True)
+    evaluator.add_event_handler(Events.COMPLETED, last_model_saver, {model_name: model})
 
     logger.debug("Start training: {} epochs".format(epochs))
     try:
@@ -447,6 +457,8 @@ if __name__ == "__main__":
                         help='factor to rescale base lr after each restart (default: 0.5)')
     parser.add_argument('--lr_reduce_patience', type=int, default=10,
                         help='reduce on plateau patience in epochs (default: 10)')
+    parser.add_argument('--early_stop_patience', type=int, default=20,
+                        help='early stopping patience in epochs (default: 20)')
     parser.add_argument('--log_interval', type=int, default=100,
                         help='how many batches to wait before logging training status')
     parser.add_argument("--output", type=str, default="output",
@@ -461,6 +473,6 @@ if __name__ == "__main__":
         args.epochs,
         args.optim,
         args.lr, args.lr_update_every, args.gamma, args.restart_every, args.restart_factor, args.init_lr_factor,
-        args.lr_reduce_patience,
+        args.lr_reduce_patience, args.early_stop_patience,
         args.log_interval, args.output,
         args.debug)

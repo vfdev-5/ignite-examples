@@ -34,7 +34,6 @@ train_data_transform = [
 ]
 
 
-
 val_data_transform = [
     RandomHorizontalFlip(p=0.5),
     RandomVerticalFlip(p=0.5),
