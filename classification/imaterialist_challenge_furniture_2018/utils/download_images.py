@@ -1,16 +1,27 @@
-# Code inspired from https://www.kaggle.com/liangjiajun/multiprocess-download-image-with-progress-bar
+#!/usr/bin/python3.5
+# -*- coding:utf-8 -*-
+# Created Time: Fri 02 Mar 2018 03:58:07 PM CST
+# Purpose: download image
+# Mail: tracyliang18@gmail.com
+# Adapted to python 3 by Aloisio Dourado in Sun Mar 11 2018
 
-import sys, os, multiprocessing, urllib
+# Note to Kagglers: This script will not run directly in Kaggle kernels. You
+# need to download it and run it on your local machine.
+
+# Images that already exist will not be downloaded again, so the script can
+# resume a partially completed download. All images will be saved in the JPG
+# format with 90% compression quality.
+
+import sys, os, multiprocessing, urllib3, csv
 from PIL import Image
-try:
-    from StringIO import StringIO
-except ImportError:
-    from io import StringIO
+from io import BytesIO
 from tqdm  import tqdm
 import json
 
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-def parse_data(data_file):
+
+def ParseData(data_file):
     ann = {}
     if 'train' in data_file or 'validation' in data_file:
         _ann = json.load(open(data_file))['annotations']
@@ -30,7 +41,7 @@ def parse_data(data_file):
     return key_url_list
 
 
-def download_image(key_url):
+def DownloadImage(key_url):
     out_dir = sys.argv[2]
     (key, url) = key_url
     filename = os.path.join(out_dir, '%s.png' % key)
@@ -40,32 +51,33 @@ def download_image(key_url):
         return
 
     try:
-        response = urllib.request.urlopen(url)
-        image_data = response.read()
-    except Exception:
+        http = urllib3.PoolManager(10)
+        response = http.request('GET', url, timeout=10)
+        image_data = response.data
+    except:
         print('Warning: Could not download image %s from %s' % (key, url))
         return
 
     try:
-        pil_image = Image.open(StringIO(image_data))
-    except Exception:
-        print('Warning: Failed to parse image %s' % key)
+        pil_image = Image.open(BytesIO(image_data))
+    except:
+        print('Warning: Failed to parse image %s %s' % (key, url))
         return
 
     try:
         pil_image_rgb = pil_image.convert('RGB')
-    except Exception:
+    except:
         print('Warning: Failed to convert image %s to RGB' % key)
         return
 
     try:
         pil_image_rgb.save(filename, format='PNG')
-    except Exception:
+    except:
         print('Warning: Failed to save image %s' % filename)
         return
 
 
-def run():
+def Run():
     if len(sys.argv) != 3:
         print('Syntax: %s <train|validation|test.json> <output_dir/>' % sys.argv[0])
         sys.exit(0)
@@ -74,13 +86,13 @@ def run():
     if not os.path.exists(out_dir):
         os.mkdir(out_dir)
 
-    key_url_list = parse_data(data_file)
+    key_url_list = ParseData(data_file)
     pool = multiprocessing.Pool(processes=12)
 
     with tqdm(total=len(key_url_list)) as t:
-        for _ in pool.imap_unordered(download_image, key_url_list):
+        for _ in pool.imap_unordered(DownloadImage, key_url_list):
             t.update(1)
 
 
 if __name__ == '__main__':
-    run()
+    Run()

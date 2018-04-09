@@ -2,6 +2,8 @@ import sys
 from pathlib import Path
 from argparse import ArgumentParser
 
+import numpy as np
+
 try:
     from image_dataset_viz import DatasetExporter
 except ImportError:
@@ -17,6 +19,7 @@ if __name__ == "__main__":
 
     parser = ArgumentParser("Dataset viz")
     parser.add_argument("dataset_path", type=str, help="Path to a dataset")
+    parser.add_argument("output_path", type=str, help="Output path")
     parser.add_argument("--limit", type=int, default=None,
                         help="Max number of datapoints to vizualize (default: None=all)")
     parser.add_argument("--test", action="store_true",
@@ -28,12 +31,18 @@ if __name__ == "__main__":
         dataset = TestFilesDataset(args.dataset_path)
         read_target_fn = None
         targets = None
+        images = dataset.images
     else:
         dataset = TrainvalFilesDataset(args.dataset_path)
         read_target_fn = lambda label: str(label)
-        targets = dataset.labels
+        targets = np.array(dataset.labels)
+        images = np.array(dataset.images)
+        # Reorder by class:
+        indices = np.argsort(targets)
+        targets = targets[indices].tolist()
+        images = images[indices].tolist()
 
     de = DatasetExporter(n_cols=20, text_size=10, text_color=(255, 0, 255),
                          read_target_fn=read_target_fn,
                          img_id_fn=lambda f: Path(f).stem)
-    de.export(dataset.images, targets, output_folder="../imaterialist_furniture_viz")
+    de.export(images, targets, output_folder=args.output_path)
