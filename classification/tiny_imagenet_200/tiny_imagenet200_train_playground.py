@@ -1,6 +1,7 @@
 from __future__ import print_function
 
 import os
+import sys
 from argparse import ArgumentParser
 import random
 import logging
@@ -12,11 +13,11 @@ from sklearn.model_selection import StratifiedKFold
 
 import torch
 from torch import nn
-from torch.optim import Adam, SGD
+from torch.optim import SGD
 from torch.utils.data import DataLoader
 from torch.utils.data.sampler import SubsetRandomSampler
-from torch.optim.lr_scheduler import ExponentialLR, ReduceLROnPlateau
-from torchvision.transforms import Compose, ToTensor, Normalize
+from torch.optim.lr_scheduler import _LRScheduler, ReduceLROnPlateau
+from torchvision.transforms import Compose, ToTensor
 from torchvision.datasets import ImageFolder
 
 try:
@@ -25,34 +26,12 @@ except ImportError:
     raise RuntimeError("No tensorboardX package is found. Please install with the command: \npip install tensorboardX")
 
 from ignite.engines import Events, create_supervised_evaluator, Engine
-from ignite.metrics import CategoricalAccuracy, Loss, Precision, Recall
+from ignite.metrics import CategoricalAccuracy, Loss
 from ignite.handlers import ModelCheckpoint, Timer, EarlyStopping
 from ignite._utils import to_variable, to_tensor
 
-from models.small_squeezenets_v1_1 import get_small_squeezenet_v1_1, SqueezeNetV11BN
-from models.small_vgg16_bn import get_small_vgg16_bn
-from models.small_nasnet_a_mobile import SmallNASNetAMobile
-from lr_schedulers import LRSchedulerWithRestart
 
-
-SEED = 12345
-random.seed(SEED)
-torch.manual_seed(SEED)
-
-MODEL_MAP = {
-    "squeezenet_v1_1": get_small_squeezenet_v1_1,
-    "squeezenet_v1_1_bn": SqueezeNetV11BN,
-    "vgg16_bn": get_small_vgg16_bn,
-    "nasnet_a_mobile": SmallNASNetAMobile
-}
-
-OPTIMIZER_MAP = {
-    "adam": Adam,
-    "sgd": SGD
-}
-
-
-def get_train_val_indices(data_loader, fold_index=0, n_splits=5):
+def get_train_val_indices(data_loader, fold_index=0, n_splits=5, seed=None):
     # Stratified split: train/val:
     n_samples = len(data_loader.dataset)
     batch_size = data_loader.batch_size
@@ -63,38 +42,24 @@ def get_train_val_indices(data_loader, fold_index=0, n_splits=5):
         end_index = batch_size * (i + 1)
         y[start_index: end_index] = label.numpy()
 
-    skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=SEED)
+    skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=seed)
     for i, (train_indices, val_indices) in enumerate(skf.split(X, y)):
         if i == fold_index:
             return train_indices, val_indices
 
 
-def get_data_loaders(dataset_path, imgaugs, train_batch_size, val_batch_size, num_workers, cuda=True):
+def get_data_loaders(dataset_path,
+                     train_data_transform,
+                     val_data_transform,
+                     train_batch_size, val_batch_size,
+                     trainval_split,
+                     num_workers, seed=None, cuda=True):
 
-    # Load imgaugs module:
-    this_dir = os.path.dirname(__file__)
-    spec = util.spec_from_file_location("imgaugs", os.path.join(this_dir, imgaugs))
-    custom_module = util.module_from_spec(spec)
-    spec.loader.exec_module(custom_module)
+    if isinstance(train_data_transform, (list, tuple)):
+        train_data_transform = Compose(train_data_transform)
 
-    train_imgaugs = getattr(custom_module, "train_imgaugs")
-    val_imgaugs = getattr(custom_module, "val_imgaugs")
-
-    train_data_transform = Compose(
-        train_imgaugs +
-        [
-            ToTensor(),
-            Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
-        ]
-    )
-
-    val_data_transform = Compose(
-        val_imgaugs +
-        [
-            ToTensor(),
-            Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
-        ]
-    )
+    if isinstance(val_data_transform, (list, tuple)):
+        val_data_transform = Compose(val_data_transform)
 
     train_dataset_path = os.path.join(dataset_path, 'train')
     train_dataset = ImageFolder(train_dataset_path, transform=train_data_transform)
@@ -106,7 +71,7 @@ def get_data_loaders(dataset_path, imgaugs, train_batch_size, val_batch_size, nu
                                  shuffle=False, drop_last=False,
                                  num_workers=num_workers, pin_memory=False)
 
-    train_indices, val_indices = get_train_val_indices(trainval_loader, fold_index=0, n_splits=5)
+    train_indices, val_indices = get_train_val_indices(trainval_loader, seed=seed, **trainval_split)
 
     train_loader = DataLoader(train_dataset, batch_size=train_batch_size,
                               sampler=SubsetRandomSampler(train_indices),
@@ -175,52 +140,83 @@ def create_supervised_trainer(model, optimizer, loss_fn, metrics={}, cuda=False)
     return trainer
 
 
-def save_conf(logger, writer, model_name, imgaugs,
-        train_batch_size, val_batch_size, num_workers,
-        epochs, optim,
-        lr, gamma, restart_every, restart_factor, init_lr_factor,
-        output):
-    conf_str = """        
-        Training configuration:
-            Model: {model}
-            Image augs: {imgaugs}
-            Train batch size: {train_batch_size}
-            Val batch size: {val_batch_size}
-            Number of workers: {num_workers}
-            Number of epochs: {epochs}
-            Optimizer: {optim}
-            Learning rate: {lr}
-            Exp lr scheduler gamma: {gamma}
-                restart every: {restart_every}
-                restart factor: {restart_factor}
-                init lr factor: {init_lr_factor}
-            Output folder: {output}        
-    """.format(
-        model=model_name,
-        imgaugs=imgaugs,
-        train_batch_size=train_batch_size,
-        val_batch_size=val_batch_size,
-        num_workers=num_workers,
-        epochs=epochs,
-        optim=optim,
-        lr=lr,
-        gamma=gamma,
-        restart_every=restart_every,
-        restart_factor=restart_factor,
-        init_lr_factor=init_lr_factor,
-        output=output
-    )
+def save_conf(config_file, logger, writer):
+    conf_str = """
+        Training configuration file:
+        
+    """
+    with open(config_file, 'r') as reader:
+        lines = reader.readlines()
+        for l in lines:
+            conf_str += l
+    conf_str += "\n\n"
     logger.info(conf_str)
     writer.add_text('Configuration', conf_str)
 
 
-def run(path, model_name, imgaugs,
-        train_batch_size, val_batch_size, num_workers,
-        epochs, optim,
-        lr, gamma, restart_every, restart_factor, init_lr_factor,
-        log_interval, output, debug):
+def load_config(config_filepath):
+    assert os.path.exists(config_filepath), "Configuration file '{}' is not found".format(config_filepath)
+    # Handle local modules
+    sys.path.insert(0, os.path.dirname(__file__))
+    # Load custom module
+    spec = util.spec_from_file_location("config", config_filepath)
+    custom_module = util.module_from_spec(spec)
+    spec.loader.exec_module(custom_module)
+    config = custom_module.__dict__
+    assert "DATASET_PATH" in config, "DATASET_PATH parameter is not found in configuration file"
+    assert os.path.exists(config["DATASET_PATH"]), \
+        "Dataset '{}' is not found".format(config["DATASET_PATH"]) + \
+        "Dataset can be downloaded from : http://cs231n.stanford.edu/tiny-imagenet-200.zip"
+
+    assert "OUTPUT_PATH" in config, "OUTPUT_PATH is not found in the configuration file"
+
+    assert "N_EPOCHS" in config, "Number of epochs should be specified in the configuration file"
+
+    assert "MODEL" in config, "MODEL is not found in configuration file"
+    if isinstance(config["MODEL"], str) and os.path.isfile(config["MODEL"]):
+        config["MODEL"] = torch.load(config["MODEL"])
+    assert isinstance(config["MODEL"], nn.Module), \
+        "Model should be an instance of torch.nn.Module, but given {}".format(type(config["MODEL"]))
+
+    if "TRAIN_TRANSFORMS" not in config:
+        config["TRAIN_TRANSFORMS"] = [ToTensor(), ]
+
+    if "VAL_TRANSFORMS" not in config:
+        config["VAL_TRANSFORMS"] = [ToTensor(), ]
+
+    if "OPTIM" not in config:
+        config["OPTIM"] = SGD(config["MODEL"].parameters(), lr=0.1, momentum=0.9, nesterov=True)
+    assert isinstance(config["OPTIM"], torch.optim.Optimizer), \
+        "Optimizer should be an instance of torch.optim.Optimizer, but given {}".format(type(config["OPTIM"]))
+
+    if "LR_SCHEDULERS" in config:
+        assert isinstance(config["LR_SCHEDULERS"], (tuple, list))
+        for s in config["LR_SCHEDULERS"]:
+            assert isinstance(s, _LRScheduler), \
+                "LR scheduler 's' should be instance of torch.optim.lr_scheduler._LRScheduler, " \
+                "but given {}".format(type(s))
+
+    if "REDUCE_LR_ON_PLATEAU" in config:
+        assert isinstance(config["REDUCE_LR_ON_PLATEAU"], ReduceLROnPlateau)
+
+    return config
+
+
+def run(config_file):
 
     print("--- Tiny ImageNet 200 Playground : Training --- ")
+
+    print("Load config file ... ")
+    config = load_config(config_file)
+
+    seed = config.get("SEED", 2018)
+    random.seed(seed)
+    torch.manual_seed(seed)
+
+    output = config["OUTPUT_PATH"]
+    model = config["MODEL"]
+    model_name = model.__class__.__name__
+    debug = config.get("DEBUG", False)
 
     from datetime import datetime
     now = datetime.now()
@@ -239,49 +235,40 @@ def run(path, model_name, imgaugs,
     logger.debug("Setup tensorboard writer")
     writer = SummaryWriter(log_dir=os.path.join(log_dir, "tensorboard"))
 
-    save_conf(logger, writer, model_name, imgaugs,
-        train_batch_size, val_batch_size, num_workers,
-        epochs, optim,
-        lr, gamma, restart_every, restart_factor, init_lr_factor,
-        log_dir)
+    save_conf(config_file, logger, writer)
 
     cuda = torch.cuda.is_available()
     if cuda:
         logger.debug("CUDA is enabled")
         from torch.backends import cudnn
         cudnn.benchmark = True
-
-    logger.debug("Setup model: {}".format(model_name))
-
-    if not os.path.isfile(model_name):
-        assert model_name in MODEL_MAP, "Model name not in {}".format(MODEL_MAP.keys())
-        model = MODEL_MAP[model_name](num_classes=200)
-    else:
-        model = torch.load(model_name)
-
-    model_name = model.__class__.__name__
-    if cuda:
         model = model.cuda()
+
     write_model_graph(writer, model=model, cuda=cuda)
 
     logger.debug("Setup train/val dataloaders")
-    train_loader, val_loader = get_data_loaders(path, imgaugs, train_batch_size, val_batch_size, num_workers, cuda=cuda)
+    dataset_path = config["DATASET_PATH"]
+    train_data_transform = config["TRAIN_TRANSFORMS"]
+    val_data_transform = config["VAL_TRANSFORMS"]
+    train_batch_size = config.get("BATCH_SIZE", 64)
+    val_batch_size = config.get("VAL_BATCH_SIZE", train_batch_size)
+    num_workers = config.get("NUM_WORKERS", 8)
+    trainval_split = config.get("TRAINVAL_SPLIT", {'fold_index': 0, 'n_splits': 7})
+    train_loader, val_loader = get_data_loaders(dataset_path,
+                                                train_data_transform,
+                                                val_data_transform,
+                                                train_batch_size, val_batch_size,
+                                                trainval_split,
+                                                num_workers, cuda=cuda)
 
-    logger.debug("Setup optimizer")
-    assert optim in OPTIMIZER_MAP, "Optimizer name not in {}".format(OPTIMIZER_MAP.keys())
-    optimizer = OPTIMIZER_MAP[optim](model.parameters(), lr=lr)
+    optimizer = config["OPTIM"]
 
     logger.debug("Setup criterion")
     criterion = nn.CrossEntropyLoss()
     if cuda:
         criterion = criterion.cuda()
 
-    lr_scheduler = ExponentialLR(optimizer, gamma=gamma)
-    lr_scheduler_restarts = LRSchedulerWithRestart(lr_scheduler,
-                                                   restart_every=restart_every,
-                                                   restart_factor=restart_factor,
-                                                   init_lr_factor=init_lr_factor)
-    reduce_on_plateau = ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=5, verbose=True)
+    lr_schedulers = config.get("LR_SCHEDULERS")
 
     def output_transform(output):
         y_pred = output['y_pred']
@@ -292,21 +279,20 @@ def run(path, model_name, imgaugs,
     trainer = create_supervised_trainer(model, optimizer, criterion,
                                         metrics={
                                             'accuracy': CategoricalAccuracy(output_transform=output_transform),
-                                            # 'precision': Precision(output_transform=output_transform),
-                                            # 'recall': Recall(output_transform=output_transform),
                                             'nll': Loss(criterion, output_transform=output_transform)
                                         },
                                         cuda=cuda)
     evaluator = create_supervised_evaluator(model,
                                             metrics={
                                                 'accuracy': CategoricalAccuracy(),
-                                                # 'precision': Precision(),
-                                                # 'recall': Recall(),
                                                 'nll': Loss(criterion)
                                             },
                                             cuda=cuda)
 
     logger.debug("Setup handlers")
+    log_interval = config.get("LOG_INTERVAL", 100)
+    reduce_on_plateau = config.get("REDUCE_LR_ON_PLATEAU")
+
     # Setup timer to measure training time
     timer = Timer(average=True)
     timer.attach(trainer,
@@ -326,12 +312,20 @@ def run(path, model_name, imgaugs,
 
     @trainer.on(Events.EPOCH_STARTED)
     def update_lr_schedulers(engine):
-        lr_scheduler_restarts.step()
-        lrs = lr_scheduler_restarts.get_lr()
-        if len(lrs) == 1:
-            writer.add_scalar("learning_rate", lrs[0], engine.state.epoch)
+        if lr_schedulers is not None:
+            for lr_scheduler in lr_schedulers:
+                lr_scheduler.step()
+
+    @trainer.on(Events.EPOCH_STARTED)
+    def log_lrs(engine):
+        if len(optimizer.param_groups) == 1:
+            lr = float(optimizer.param_groups[0]['lr'])
+            writer.add_scalar("learning_rate", lr, engine.state.epoch)
+            logger.debug("Learning rate: {}".format(lr))
         else:
-            for i, lr in enumerate(lrs):
+            for i, param_group in enumerate(optimizer.param_groups):
+                lr = float(param_group['lr'])
+                logger.debug("Learning rate (group {}): {}".format(i, lr))
                 writer.add_scalar("learning_rate_group_{}".format(i), lr, engine.state.epoch)
 
     @trainer.on(Events.EPOCH_COMPLETED)
@@ -341,38 +335,25 @@ def run(path, model_name, imgaugs,
         logger.info("Training Results - Epoch: {}  Avg accuracy: {:.2f} Avg loss: {:.2f}"
                     .format(engine.state.epoch, engine.state.metrics['accuracy'], engine.state.metrics['nll']))
         writer.add_scalar("training/avg_accuracy", engine.state.metrics['accuracy'], engine.state.epoch)
+        writer.add_scalar("training/avg_error", 1.0 - engine.state.metrics['accuracy'], engine.state.epoch)
         writer.add_scalar("training/avg_loss", engine.state.metrics['nll'], engine.state.epoch)
-        # for metric_name in ['precision', 'recall']:
-        #     value = engine.state.metrics[metric_name].cpu() if cuda else engine.state.metrics[metric_name]
-        #     avg_value = torch.mean(value)
-        #     writer.add_scalar("training/avg_{}".format(metric_name), avg_value, engine.state.epoch)
-        #     # logger.info("   {} per class: {}".format(metric_name, value.numpy().tolist()))
 
     @trainer.on(Events.EPOCH_COMPLETED)
     def log_validation_results(engine):
         metrics = evaluator.run(val_loader).metrics
         avg_accuracy = metrics['accuracy']
         avg_nll = metrics['nll']
-        writer.add_scalar("validation/loss", avg_nll, engine.state.epoch)
-        writer.add_scalar("validation/accuracy", avg_accuracy, engine.state.epoch)
+        writer.add_scalar("validation/avg_loss", avg_nll, engine.state.epoch)
+        writer.add_scalar("validation/avg_accuracy", avg_accuracy, engine.state.epoch)
+        writer.add_scalar("validation/avg_error", 1.0 - avg_accuracy, engine.state.epoch)
         logger.info("Validation Results - Epoch: {}  Avg accuracy: {:.2f} Avg loss: {:.2f}"
                     .format(engine.state.epoch, avg_accuracy, avg_nll))
 
-        # for metric_name in ['precision', 'recall']:
-        #     value = engine.state.metrics[metric_name].cpu() if cuda else engine.state.metrics[metric_name]
-        #     avg_value = torch.mean(value)
-        #     writer.add_scalar("validation/avg_{}".format(metric_name), avg_value, engine.state.epoch)
-        #     # logger.info("   {} per class: {}".format(metric_name, value.numpy().tolist()))
-
-    @evaluator.on(Events.COMPLETED)
-    def update_reduce_on_plateau(engine):
-        val_loss = engine.state.metrics['nll']
-        reduce_on_plateau.step(val_loss)
-
-    @evaluator.on(Events.COMPLETED)
-    def update_early_stopping(engine):
-        val_loss = engine.state.metrics['nll']
-        reduce_on_plateau.step(val_loss)
+    if reduce_on_plateau is not None:
+        @evaluator.on(Events.COMPLETED)
+        def update_reduce_on_plateau(engine):
+            val_loss = engine.state.metrics['nll']
+            reduce_on_plateau.step(val_loss)
 
     def score_function(engine):
         val_loss = engine.state.metrics['nll']
@@ -380,28 +361,41 @@ def run(path, model_name, imgaugs,
         return -val_loss
 
     # Setup early stopping:
-    handler = EarlyStopping(patience=20, score_function=score_function, trainer=trainer)
-    setup_logger(handler._logger, log_dir, log_level)
-    evaluator.add_event_handler(Events.COMPLETED, handler)
+    if "EARLY_STOPPING_KWARGS" in config:
+        kwargs = config["EARLY_STOPPING_KWARGS"]
+        if 'score_function' not in kwargs:
+            kwargs['score_function'] = score_function
+        handler = EarlyStopping(trainer=trainer, **kwargs)
+        setup_logger(handler._logger, log_dir, log_level)
+        evaluator.add_event_handler(Events.COMPLETED, handler)
 
     # Setup model checkpoint:
-    handler = ModelCheckpoint(log_dir,
-                              filename_prefix="model",
-                              score_name="val_loss",
-                              score_function=score_function,
-                              n_saved=5,
-                              atomic=True,
-                              create_dir=True)
-    evaluator.add_event_handler(Events.COMPLETED, handler, {model_name: model})
+    best_model_saver = ModelCheckpoint(log_dir,
+                                       filename_prefix="model",
+                                       score_name="val_loss",
+                                       score_function=score_function,
+                                       n_saved=5,
+                                       atomic=True,
+                                       create_dir=True)
+    evaluator.add_event_handler(Events.COMPLETED, best_model_saver, {model_name: model})
 
-    logger.debug("Start training: {} epochs".format(epochs))
+    last_model_saver = ModelCheckpoint(log_dir,
+                                       filename_prefix="checkpoint",
+                                       save_interval=1,
+                                       n_saved=1,
+                                       atomic=True,
+                                       create_dir=True)
+    evaluator.add_event_handler(Events.COMPLETED, last_model_saver, {model_name: model})
+
+    n_epochs = config["N_EPOCHS"]
+    logger.debug("Start training: {} epochs".format(n_epochs))
     try:
-        trainer.run(train_loader, max_epochs=epochs)
+        trainer.run(train_loader, max_epochs=n_epochs)
     except KeyboardInterrupt:
         logger.info("Catched KeyboardInterrupt -> exit")
     except Exception as e:  # noqa
         logger.exception("")
-        if args.debug:
+        if debug:
             try:
                 # open an ipython shell if possible
                 import IPython
@@ -416,52 +410,6 @@ def run(path, model_name, imgaugs,
 if __name__ == "__main__":
 
     parser = ArgumentParser()
-    parser.add_argument('dataset_path', type=str,
-                        help="Path to Tiny ImageNet dataset. " +
-                             "It can be downloaded from : http://cs231n.stanford.edu/tiny-imagenet-200.zip")
-    parser.add_argument("--model", type=str,
-                        default="squeezenet_v1_1",
-                        help="Model choice: \n"
-                             "- squeezenet_v1_1 \n"
-                             "- squeezenet_v1_1_bn \n"
-                             "- vgg16_bn \n "
-                             "- nasnet_a_mobile \n "
-                             "or a path to saved model (default: squeezenet_v1_1)")
-    parser.add_argument('--imgaugs', type=str, default="imgaugs.py",
-                        help='image augmentations module, python file (default: imgaugs.py)')
-    parser.add_argument('--batch_size', type=int, default=64,
-                        help='input batch size for training (default: 64)')
-    parser.add_argument('--num_workers', type=int, default=8,
-                        help='Number of workers in data loader(default: 8)')
-    parser.add_argument('--val_batch_size', type=int, default=100,
-                        help='input batch size for validation (default: 100)')
-    parser.add_argument('--epochs', type=int, default=50,
-                        help='number of epochs to train (default: 50)')
-    parser.add_argument('--optim', type=str, choices=["adam", "sgd"], default="adam",
-                        help='optimizer choice: adam or sgd')
-    parser.add_argument('--lr', type=float, default=0.0001,
-                        help='learning rate (default: 0.01)')
-    parser.add_argument('--gamma', type=float, default=0.9,
-                        help='learning rate exponential scheduler gamma (default: 0.95)')
-    parser.add_argument('--restart_every', type=float, default=10,
-                        help='restart lr scheduler every `restart_every` epoch(default: 10)')
-    parser.add_argument('--restart_factor', type=float, default=1.5,
-                        help='factor to rescale `restart_every` after each restart (default: 1.5)')
-    parser.add_argument('--init_lr_factor', type=float, default=0.5,
-                        help='factor to rescale base lr after each restart (default: 0.5)')
-    parser.add_argument('--log_interval', type=int, default=100,
-                        help='how many batches to wait before logging training status')
-    parser.add_argument("--output", type=str, default="output",
-                        help="directory to store best models")
-    parser.add_argument("--debug", action="store_true", default=False,
-                        help="Enable debugging")
+    parser.add_argument("config_file", type=str, help="Configuration file. See examples in configs/")
     args = parser.parse_args()
-
-    run(args.dataset_path, args.model,
-        args.imgaugs,
-        args.batch_size, args.val_batch_size, args.num_workers,
-        args.epochs,
-        args.optim,
-        args.lr, args.gamma, args.restart_every, args.restart_factor, args.init_lr_factor,
-        args.log_interval, args.output,
-        args.debug)
+    run(args.config_file)

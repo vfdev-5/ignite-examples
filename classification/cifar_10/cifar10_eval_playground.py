@@ -144,7 +144,8 @@ def run(checkpoint, dataset_path, imgaugs, batch_size, num_workers, n_tta, outpu
     from datetime import datetime
     now = datetime.now()
     log_dir = os.path.join(output, "inference_%s" % (now.strftime("%Y%m%d_%H%M")))
-    os.makedirs(log_dir, exist_ok=True)
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir)
 
     log_level = logging.INFO
     if debug:
@@ -217,13 +218,14 @@ def run(checkpoint, dataset_path, imgaugs, batch_size, num_workers, n_tta, outpu
         logger.info("Catched KeyboardInterrupt -> exit")
     except Exception as e:  # noqa
         logger.exception("")
-        if args.debug:
+        if debug:
             try:
                 # open an ipython shell if possible
                 import IPython
                 IPython.embed()  # noqa
             except ImportError:
                 print("Failed to start IPython console")
+    writer.close()
 
     # Check indices:
     for i in range(n_tta - 1):
@@ -236,8 +238,6 @@ def run(checkpoint, dataset_path, imgaugs, batch_size, num_workers, n_tta, outpu
     y_preds = np.argmax(y_probas, axis=-1)
 
     logger.info("\n" + classification_report(y_true, y_preds))
-
-    writer.close()
 
 
 if __name__ == "__main__":
