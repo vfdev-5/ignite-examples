@@ -1,5 +1,6 @@
 from __future__ import print_function
 
+
 import os
 import sys
 from argparse import ArgumentParser
@@ -7,18 +8,11 @@ import random
 import logging
 from importlib import util
 
-import numpy as np
-
-from sklearn.model_selection import StratifiedKFold
-
 import torch
 from torch import nn
 from torch.optim import SGD
-from torch.utils.data import DataLoader
-from torch.utils.data.sampler import SubsetRandomSampler
 from torch.optim.lr_scheduler import _LRScheduler, ReduceLROnPlateau
-from torchvision.transforms import Compose, ToTensor
-from torchvision.datasets import ImageFolder
+from torchvision.transforms import ToTensor
 
 try:
     from tensorboardX import SummaryWriter
@@ -30,57 +24,7 @@ from ignite.metrics import CategoricalAccuracy, Loss
 from ignite.handlers import ModelCheckpoint, Timer, EarlyStopping
 from ignite._utils import to_variable, to_tensor
 
-
-def get_train_val_indices(data_loader, fold_index=0, n_splits=5, seed=None):
-    # Stratified split: train/val:
-    n_samples = len(data_loader.dataset)
-    batch_size = data_loader.batch_size
-    X = np.zeros((n_samples, 1))
-    y = np.zeros(n_samples, dtype=np.int)
-    for i, (_, label) in enumerate(data_loader):
-        start_index = batch_size * i
-        end_index = batch_size * (i + 1)
-        y[start_index: end_index] = label.numpy()
-
-    skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=seed)
-    for i, (train_indices, val_indices) in enumerate(skf.split(X, y)):
-        if i == fold_index:
-            return train_indices, val_indices
-
-
-def get_data_loaders(dataset_path,
-                     train_data_transform,
-                     val_data_transform,
-                     train_batch_size, val_batch_size,
-                     trainval_split,
-                     num_workers, seed=None, cuda=True):
-
-    if isinstance(train_data_transform, (list, tuple)):
-        train_data_transform = Compose(train_data_transform)
-
-    if isinstance(val_data_transform, (list, tuple)):
-        val_data_transform = Compose(val_data_transform)
-
-    train_dataset_path = os.path.join(dataset_path, 'train')
-    train_dataset = ImageFolder(train_dataset_path, transform=train_data_transform)
-    val_dataset = ImageFolder(train_dataset_path, transform=val_data_transform)
-
-    # Temporary dataset and dataloader to create train/val split
-    trainval_dataset = ImageFolder(train_dataset_path, transform=ToTensor())
-    trainval_loader = DataLoader(trainval_dataset, batch_size=train_batch_size,
-                                 shuffle=False, drop_last=False,
-                                 num_workers=num_workers, pin_memory=False)
-
-    train_indices, val_indices = get_train_val_indices(trainval_loader, seed=seed, **trainval_split)
-
-    train_loader = DataLoader(train_dataset, batch_size=train_batch_size,
-                              sampler=SubsetRandomSampler(train_indices),
-                              num_workers=num_workers, pin_memory=cuda)
-    val_loader = DataLoader(val_dataset, batch_size=val_batch_size,
-                            sampler=SubsetRandomSampler(val_indices),
-                            num_workers=num_workers, pin_memory=cuda)
-
-    return train_loader, val_loader
+from dataflow import get_trainval_data_loaders
 
 
 def setup_logger(logger, output, level=logging.INFO):
@@ -254,12 +198,12 @@ def run(config_file):
     val_batch_size = config.get("VAL_BATCH_SIZE", train_batch_size)
     num_workers = config.get("NUM_WORKERS", 8)
     trainval_split = config.get("TRAINVAL_SPLIT", {'fold_index': 0, 'n_splits': 7})
-    train_loader, val_loader = get_data_loaders(dataset_path,
-                                                train_data_transform,
-                                                val_data_transform,
-                                                train_batch_size, val_batch_size,
-                                                trainval_split,
-                                                num_workers, cuda=cuda)
+    train_loader, val_loader = get_trainval_data_loaders(dataset_path,
+                                                         train_data_transform,
+                                                         val_data_transform,
+                                                         train_batch_size, val_batch_size,
+                                                         trainval_split,
+                                                         num_workers, cuda=cuda)
 
     optimizer = config["OPTIM"]
 

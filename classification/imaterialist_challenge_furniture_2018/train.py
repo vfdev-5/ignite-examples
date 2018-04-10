@@ -9,10 +9,7 @@ from importlib import util
 import torch
 from torch import nn
 from torch.optim import SGD
-from torch.utils.data import DataLoader
-from torch.utils.data.sampler import SubsetRandomSampler
 from torch.optim.lr_scheduler import _LRScheduler, ReduceLROnPlateau
-from torchvision.transforms import Compose, ToTensor
 
 try:
     from tensorboardX import SummaryWriter
@@ -23,9 +20,6 @@ from ignite.engines import Events, create_supervised_evaluator, Engine
 from ignite.metrics import CategoricalAccuracy, Loss
 from ignite.handlers import ModelCheckpoint, Timer, EarlyStopping
 from ignite._utils import to_variable, to_tensor
-
-
-from common.dataset import TrainvalFilesDataset, TransformedDataset
 
 
 def setup_logger(logger, output, level=logging.INFO):

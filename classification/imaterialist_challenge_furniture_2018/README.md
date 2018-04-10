@@ -1,5 +1,7 @@
-# 
+# iMaterialist Challenge Furniture 2018 - Playground 
 
+**/!\ Python3 code**
+ 
 ## Download data from Kaggle
 
 ```bash
