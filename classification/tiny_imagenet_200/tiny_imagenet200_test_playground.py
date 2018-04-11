@@ -12,9 +12,7 @@ import pandas as pd
 
 import torch
 from torch.nn import Module
-from torch.utils.data import DataLoader, Dataset
-from torchvision.transforms import Compose, ToTensor
-from torchvision.datasets.folder import find_classes, has_file_allowed_extension, IMG_EXTENSIONS, pil_loader
+from torchvision.transforms import ToTensor
 
 try:
     from tensorboardX import SummaryWriter
@@ -25,64 +23,8 @@ from ignite.engines import Events, Engine
 from ignite.handlers import Timer
 from ignite._utils import to_variable, to_tensor
 
-
-class TestDataset(Dataset):
-
-    def __init__(self, root, loader=None, transform=None):
-        assert os.path.exists(root)
-        self.classes, class_to_idx = find_classes(os.path.join(root, 'train'))
-        self.image_paths = []
-        path = os.path.join(root, 'test', 'images')
-        for p, _, fnames in sorted(os.walk(path)):
-            for fname in sorted(fnames):
-                if has_file_allowed_extension(fname, IMG_EXTENSIONS):
-                    path = os.path.join(p, fname)
-                    self.image_paths.append(path)
-        self.loader = pil_loader if loader is None else loader
-        self.transform = transform
-
-    def __len__(self):
-        return len(self.image_paths)
-
-    def __getitem__(self, index):
-        path = self.image_paths[index]
-        sample = self.loader(path)
-        if self.transform is not None:
-            sample = self.transform(sample)
-        return sample, path
-
-
-def get_test_data_loader(dataset_path,
-                         test_data_transform,
-                         batch_size,
-                         num_workers, cuda=True):
-
-    if isinstance(test_data_transform, (list, tuple)):
-        test_data_transform = Compose(test_data_transform)
-
-    test_dataset = TestDataset(dataset_path, transform=test_data_transform)
-
-    test_loader = DataLoader(test_dataset, batch_size=batch_size,
-                             shuffle=False, drop_last=False,
-                             num_workers=num_workers, pin_memory=cuda)
-    return test_loader
-
-
-def setup_logger(logger, output, level=logging.INFO):
-    logger.setLevel(level)
-    # create file handler which logs even debug messages
-    fh = logging.FileHandler(os.path.join(output, "eval.log"))
-    fh.setLevel(level)
-    # create console handler with a higher log level
-    ch = logging.StreamHandler()
-    ch.setLevel(level)
-    # create formatter and add it to the handlers
-    formatter = logging.Formatter("%(asctime)s|%(name)s|%(levelname)s| %(message)s")
-    fh.setFormatter(formatter)
-    ch.setFormatter(formatter)
-    # add the handlers to the logger
-    logger.addHandler(fh)
-    logger.addHandler(ch)
+from dataflow import get_test_data_loader
+from common import setup_logger, save_conf
 
 
 def write_model_graph(writer, model, cuda):
@@ -112,20 +54,6 @@ def create_inferencer(model, cuda=True):
     model.eval()
     inferencer = Engine(_update)
     return inferencer
-
-
-def save_conf(config_file, logger, writer):
-    conf_str = """
-        Test configuration file:
-        
-    """
-    with open(config_file, 'r') as reader:
-        lines = reader.readlines()
-        for l in lines:
-            conf_str += l
-    conf_str += "\n\n"
-    logger.info(conf_str)
-    writer.add_text('Configuration', conf_str)
 
 
 def load_config(config_filepath):
@@ -194,7 +122,7 @@ def run(config_file):
         print("Activated debug mode")
 
     logger = logging.getLogger("Tiny ImageNet 200: Inference")
-    setup_logger(logger, log_dir, log_level)
+    setup_logger(logger, os.path.join(log_dir, "test.log"), log_level)
 
     logger.debug("Setup tensorboard writer")
     writer = SummaryWriter(log_dir=os.path.join(log_dir, "tensorboard"))

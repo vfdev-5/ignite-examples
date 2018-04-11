@@ -1,4 +1,7 @@
 numpy
+pandas
+matplotlib
+seaborn
 scikit-learn
 git+https://github.com/pytorch/vision.git
 git+https://github.com/pytorch/ignite.git

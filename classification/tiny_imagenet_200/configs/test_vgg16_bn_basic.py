@@ -10,7 +10,7 @@ DEBUG = True
 OUTPUT_PATH = "/home/project/tiny_imagenet200_output"
 DATASET_PATH = "/home/local_data/tiny-imagenet-200/"
 
-MODEL = OUTPUT_PATH + "/training_VGG_20180409_1302/model_VGG_45_val_loss=2.178473.pth"
+MODEL = OUTPUT_PATH + "/training_VGG_20180409_1302/model_VGG_58_val_loss=2.168837.pth"
 
 N_TTA = 10
 

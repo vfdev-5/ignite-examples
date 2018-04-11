@@ -1,18 +1,15 @@
-from __future__ import print_function
-
-
-import os
+from pathlib import Path
 import sys
 from argparse import ArgumentParser
 import random
 import logging
 from importlib import util
 
+
 import torch
 from torch import nn
 from torch.optim import SGD
 from torch.optim.lr_scheduler import _LRScheduler, ReduceLROnPlateau
-from torchvision.transforms import ToTensor
 
 try:
     from tensorboardX import SummaryWriter
@@ -24,7 +21,8 @@ from ignite.metrics import CategoricalAccuracy, Loss
 from ignite.handlers import ModelCheckpoint, Timer, EarlyStopping
 from ignite._utils import to_variable, to_tensor
 
-from dataflow import get_trainval_data_loaders
+# Load common module
+sys.path.insert(0, Path(__file__).absolute().parent.parent.as_posix())
 from common import setup_logger, save_conf
 
 
@@ -37,7 +35,6 @@ def write_model_graph(writer, model, cuda):
 
 
 def create_supervised_trainer(model, optimizer, loss_fn, metrics={}, cuda=False):
-
     def _prepare_batch(batch):
         x, y = batch
         x = to_variable(x, cuda=cuda)
@@ -69,34 +66,24 @@ def create_supervised_trainer(model, optimizer, loss_fn, metrics={}, cuda=False)
 
 
 def load_config(config_filepath):
-    assert os.path.exists(config_filepath), "Configuration file '{}' is not found".format(config_filepath)
-    # Handle local modules
-    sys.path.insert(0, os.path.dirname(__file__))
+    assert Path(config_filepath).exists(), "Configuration file '{}' is not found".format(config_filepath)
     # Load custom module
     spec = util.spec_from_file_location("config", config_filepath)
     custom_module = util.module_from_spec(spec)
     spec.loader.exec_module(custom_module)
     config = custom_module.__dict__
-    assert "DATASET_PATH" in config, "DATASET_PATH parameter is not found in configuration file"
-    assert os.path.exists(config["DATASET_PATH"]), \
-        "Dataset '{}' is not found".format(config["DATASET_PATH"]) + \
-        "Dataset can be downloaded from : http://cs231n.stanford.edu/tiny-imagenet-200.zip"
+    assert "TRAIN_LOADER" in config, "TRAIN_LOADER parameter is not found in configuration file"
+    assert "VAL_LOADER" in config, "TRAIN_LOADER parameter is not found in configuration file"
 
     assert "OUTPUT_PATH" in config, "OUTPUT_PATH is not found in the configuration file"
 
     assert "N_EPOCHS" in config, "Number of epochs should be specified in the configuration file"
 
     assert "MODEL" in config, "MODEL is not found in configuration file"
-    if isinstance(config["MODEL"], str) and os.path.isfile(config["MODEL"]):
+    if isinstance(config["MODEL"], str) and Path(config["MODEL"]).is_file():
         config["MODEL"] = torch.load(config["MODEL"])
     assert isinstance(config["MODEL"], nn.Module), \
         "Model should be an instance of torch.nn.Module, but given {}".format(type(config["MODEL"]))
-
-    if "TRAIN_TRANSFORMS" not in config:
-        config["TRAIN_TRANSFORMS"] = [ToTensor(), ]
-
-    if "VAL_TRANSFORMS" not in config:
-        config["VAL_TRANSFORMS"] = [ToTensor(), ]
 
     if "OPTIM" not in config:
         config["OPTIM"] = SGD(config["MODEL"].parameters(), lr=0.1, momentum=0.9, nesterov=True)
@@ -117,8 +104,7 @@ def load_config(config_filepath):
 
 
 def run(config_file):
-
-    print("--- Tiny ImageNet 200 Playground : Training --- ")
+    print("--- iMaterialist 2018 : Training --- ")
 
     print("Load config file ... ")
     config = load_config(config_file)
@@ -127,29 +113,29 @@ def run(config_file):
     random.seed(seed)
     torch.manual_seed(seed)
 
-    output = config["OUTPUT_PATH"]
+    output = Path(config["OUTPUT_PATH"])
     model = config["MODEL"]
     model_name = model.__class__.__name__
     debug = config.get("DEBUG", False)
 
     from datetime import datetime
     now = datetime.now()
-    log_dir = os.path.join(output, "training_{}_{}".format(model_name, now.strftime("%Y%m%d_%H%M")))
-    if not os.path.exists(log_dir):
-        os.makedirs(log_dir)
+    log_dir = output / ("training_{}_{}".format(model_name, now.strftime("%Y%m%d_%H%M")))
+    if not log_dir.exists():
+        log_dir.mkdir(parents=True)
 
     log_level = logging.INFO
     if debug:
         log_level = logging.DEBUG
         print("Activated debug mode")
 
-    logger = logging.getLogger("Tiny ImageNet 200: Train")
-    setup_logger(logger, os.path.join(log_dir, "train.log"), log_level)
+    logger = logging.getLogger("iMaterialist 2018: Train")
+    setup_logger(logger, (log_dir / "train.log").as_posix(), log_level)
 
     logger.debug("Setup tensorboard writer")
-    writer = SummaryWriter(log_dir=os.path.join(log_dir, "tensorboard"))
+    writer = SummaryWriter(log_dir=(log_dir / "tensorboard").as_posix())
 
-    save_conf(config_file, log_dir, logger, writer)
+    save_conf(config_file, log_dir.as_posix(), logger, writer)
 
     cuda = torch.cuda.is_available()
     if cuda:
@@ -161,19 +147,7 @@ def run(config_file):
     write_model_graph(writer, model=model, cuda=cuda)
 
     logger.debug("Setup train/val dataloaders")
-    dataset_path = config["DATASET_PATH"]
-    train_data_transform = config["TRAIN_TRANSFORMS"]
-    val_data_transform = config["VAL_TRANSFORMS"]
-    train_batch_size = config.get("BATCH_SIZE", 64)
-    val_batch_size = config.get("VAL_BATCH_SIZE", train_batch_size)
-    num_workers = config.get("NUM_WORKERS", 8)
-    trainval_split = config.get("TRAINVAL_SPLIT", {'fold_index': 0, 'n_splits': 7})
-    train_loader, val_loader = get_trainval_data_loaders(dataset_path,
-                                                         train_data_transform,
-                                                         val_data_transform,
-                                                         train_batch_size, val_batch_size,
-                                                         trainval_split,
-                                                         num_workers, cuda=cuda)
+    train_loader, val_loader = config["TRAIN_LOADER"], config["VAL_LOADER"]
 
     optimizer = config["OPTIM"]
 
@@ -280,11 +254,11 @@ def run(config_file):
         if 'score_function' not in kwargs:
             kwargs['score_function'] = score_function
         handler = EarlyStopping(trainer=trainer, **kwargs)
-        setup_logger(handler._logger, os.path.join(log_dir, "train.log"), log_level)
+        setup_logger(handler._logger, (log_dir / "train.log").as_posix(), log_level)
         evaluator.add_event_handler(Events.COMPLETED, handler)
 
     # Setup model checkpoint:
-    best_model_saver = ModelCheckpoint(log_dir,
+    best_model_saver = ModelCheckpoint(log_dir.as_posix(),
                                        filename_prefix="model",
                                        score_name="val_loss",
                                        score_function=score_function,
@@ -293,7 +267,7 @@ def run(config_file):
                                        create_dir=True)
     evaluator.add_event_handler(Events.COMPLETED, best_model_saver, {model_name: model})
 
-    last_model_saver = ModelCheckpoint(log_dir,
+    last_model_saver = ModelCheckpoint(log_dir.as_posix(),
                                        filename_prefix="checkpoint",
                                        save_interval=1,
                                        n_saved=1,
@@ -322,7 +296,6 @@ def run(config_file):
 
 
 if __name__ == "__main__":
-
     parser = ArgumentParser()
     parser.add_argument("config_file", type=str, help="Configuration file. See examples in configs/")
     args = parser.parse_args()

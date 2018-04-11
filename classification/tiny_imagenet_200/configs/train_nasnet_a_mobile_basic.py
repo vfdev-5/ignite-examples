@@ -10,8 +10,8 @@ from transforms import GlobalContrastNormalize
 SEED = 12345
 DEBUG = True
 
-OUTPUT_PATH = "/home/project/tiny_imagenet200_output"
-DATASET_PATH = "/home/local_data/tiny-imagenet-200/"
+OUTPUT_PATH = "output"
+DATASET_PATH = "/home/fast_storage/tiny-imagenet-200/"
 TRAINVAL_SPLIT = {
     'fold_index': 0,
     'n_splits': 7
