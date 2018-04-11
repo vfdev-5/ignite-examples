@@ -25,23 +25,7 @@ from ignite.handlers import ModelCheckpoint, Timer, EarlyStopping
 from ignite._utils import to_variable, to_tensor
 
 from dataflow import get_trainval_data_loaders
-
-
-def setup_logger(logger, output, level=logging.INFO):
-    logger.setLevel(level)
-    # create file handler which logs even debug messages
-    fh = logging.FileHandler(os.path.join(output, "train.log"))
-    fh.setLevel(level)
-    # create console handler with a higher log level
-    ch = logging.StreamHandler()
-    ch.setLevel(level)
-    # create formatter and add it to the handlers
-    formatter = logging.Formatter("%(asctime)s|%(name)s|%(levelname)s| %(message)s")
-    fh.setFormatter(formatter)
-    ch.setFormatter(formatter)
-    # add the handlers to the logger
-    logger.addHandler(fh)
-    logger.addHandler(ch)
+from common import setup_logger, save_conf
 
 
 def write_model_graph(writer, model, cuda):
@@ -82,20 +66,6 @@ def create_supervised_trainer(model, optimizer, loss_fn, metrics={}, cuda=False)
         trainer.add_event_handler(Events.EPOCH_COMPLETED, metric.completed, name)
 
     return trainer
-
-
-def save_conf(config_file, logger, writer):
-    conf_str = """
-        Training configuration file:
-        
-    """
-    with open(config_file, 'r') as reader:
-        lines = reader.readlines()
-        for l in lines:
-            conf_str += l
-    conf_str += "\n\n"
-    logger.info(conf_str)
-    writer.add_text('Configuration', conf_str)
 
 
 def load_config(config_filepath):
@@ -174,12 +144,12 @@ def run(config_file):
         print("Activated debug mode")
 
     logger = logging.getLogger("Tiny ImageNet 200: Train")
-    setup_logger(logger, log_dir, log_level)
+    setup_logger(logger, os.path.join(log_dir, "train.log"), log_level)
 
     logger.debug("Setup tensorboard writer")
     writer = SummaryWriter(log_dir=os.path.join(log_dir, "tensorboard"))
 
-    save_conf(config_file, logger, writer)
+    save_conf(config_file, log_dir, logger, writer)
 
     cuda = torch.cuda.is_available()
     if cuda:
@@ -310,7 +280,7 @@ def run(config_file):
         if 'score_function' not in kwargs:
             kwargs['score_function'] = score_function
         handler = EarlyStopping(trainer=trainer, **kwargs)
-        setup_logger(handler._logger, log_dir, log_level)
+        setup_logger(handler._logger, os.path.join(log_dir, "train.log"), log_level)
         evaluator.add_event_handler(Events.COMPLETED, handler)
 
     # Setup model checkpoint:

@@ -1,4 +1,4 @@
-import os
+from pathlib import Path
 import sys
 from argparse import ArgumentParser
 import random
@@ -21,22 +21,9 @@ from ignite.metrics import CategoricalAccuracy, Loss
 from ignite.handlers import ModelCheckpoint, Timer, EarlyStopping
 from ignite._utils import to_variable, to_tensor
 
-
-def setup_logger(logger, output, level=logging.INFO):
-    logger.setLevel(level)
-    # create file handler which logs even debug messages
-    fh = logging.FileHandler(os.path.join(output, "train.log"))
-    fh.setLevel(level)
-    # create console handler with a higher log level
-    ch = logging.StreamHandler()
-    ch.setLevel(level)
-    # create formatter and add it to the handlers
-    formatter = logging.Formatter("%(asctime)s|%(name)s|%(levelname)s| %(message)s")
-    fh.setFormatter(formatter)
-    ch.setFormatter(formatter)
-    # add the handlers to the logger
-    logger.addHandler(fh)
-    logger.addHandler(ch)
+# Load common module
+sys.path.insert(0, Path(__file__).absolute().parent.parent.as_posix())
+from common import setup_logger, save_conf
 
 
 def write_model_graph(writer, model, cuda):
@@ -78,24 +65,8 @@ def create_supervised_trainer(model, optimizer, loss_fn, metrics={}, cuda=False)
     return trainer
 
 
-def save_conf(config_file, logger, writer):
-    conf_str = """
-        Training configuration file:
-
-    """
-    with open(config_file, 'r') as reader:
-        lines = reader.readlines()
-        for l in lines:
-            conf_str += l
-    conf_str += "\n\n"
-    logger.info(conf_str)
-    writer.add_text('Configuration', conf_str)
-
-
 def load_config(config_filepath):
-    assert os.path.exists(config_filepath), "Configuration file '{}' is not found".format(config_filepath)
-    # Handle local modules
-    sys.path.insert(0, os.path.dirname(__file__))
+    assert Path(config_filepath).exists(), "Configuration file '{}' is not found".format(config_filepath)
     # Load custom module
     spec = util.spec_from_file_location("config", config_filepath)
     custom_module = util.module_from_spec(spec)
@@ -109,7 +80,7 @@ def load_config(config_filepath):
     assert "N_EPOCHS" in config, "Number of epochs should be specified in the configuration file"
 
     assert "MODEL" in config, "MODEL is not found in configuration file"
-    if isinstance(config["MODEL"], str) and os.path.isfile(config["MODEL"]):
+    if isinstance(config["MODEL"], str) and Path(config["MODEL"]).is_file():
         config["MODEL"] = torch.load(config["MODEL"])
     assert isinstance(config["MODEL"], nn.Module), \
         "Model should be an instance of torch.nn.Module, but given {}".format(type(config["MODEL"]))
@@ -142,16 +113,16 @@ def run(config_file):
     random.seed(seed)
     torch.manual_seed(seed)
 
-    output = config["OUTPUT_PATH"]
+    output = Path(config["OUTPUT_PATH"])
     model = config["MODEL"]
     model_name = model.__class__.__name__
     debug = config.get("DEBUG", False)
 
     from datetime import datetime
     now = datetime.now()
-    log_dir = os.path.join(output, "training_{}_{}".format(model_name, now.strftime("%Y%m%d_%H%M")))
-    if not os.path.exists(log_dir):
-        os.makedirs(log_dir)
+    log_dir = output / ("training_{}_{}".format(model_name, now.strftime("%Y%m%d_%H%M")))
+    if not log_dir.exists():
+        log_dir.mkdir(parents=True)
 
     log_level = logging.INFO
     if debug:
@@ -159,12 +130,12 @@ def run(config_file):
         print("Activated debug mode")
 
     logger = logging.getLogger("iMaterialist 2018: Train")
-    setup_logger(logger, log_dir, log_level)
+    setup_logger(logger, (log_dir / "train.log").as_posix(), log_level)
 
     logger.debug("Setup tensorboard writer")
-    writer = SummaryWriter(log_dir=os.path.join(log_dir, "tensorboard"))
+    writer = SummaryWriter(log_dir=(log_dir / "tensorboard").as_posix())
 
-    save_conf(config_file, logger, writer)
+    save_conf(config_file, log_dir.as_posix(), logger, writer)
 
     cuda = torch.cuda.is_available()
     if cuda:
@@ -283,11 +254,11 @@ def run(config_file):
         if 'score_function' not in kwargs:
             kwargs['score_function'] = score_function
         handler = EarlyStopping(trainer=trainer, **kwargs)
-        setup_logger(handler._logger, log_dir, log_level)
+        setup_logger(handler._logger, (log_dir / "train.log").as_posix(), log_level)
         evaluator.add_event_handler(Events.COMPLETED, handler)
 
     # Setup model checkpoint:
-    best_model_saver = ModelCheckpoint(log_dir,
+    best_model_saver = ModelCheckpoint(log_dir.as_posix(),
                                        filename_prefix="model",
                                        score_name="val_loss",
                                        score_function=score_function,
@@ -296,7 +267,7 @@ def run(config_file):
                                        create_dir=True)
     evaluator.add_event_handler(Events.COMPLETED, best_model_saver, {model_name: model})
 
-    last_model_saver = ModelCheckpoint(log_dir,
+    last_model_saver = ModelCheckpoint(log_dir.as_posix(),
                                        filename_prefix="checkpoint",
                                        save_interval=1,
                                        n_saved=1,

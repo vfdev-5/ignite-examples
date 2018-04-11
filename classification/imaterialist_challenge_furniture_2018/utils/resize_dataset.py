@@ -7,9 +7,13 @@ from joblib import Parallel, delayed
 
 
 def task(fp):
-    img = Image.open(fp)
-    resized_img = img.resize((dim, dim), interpolation)
-    resized_img.save((output_path / fp.name).as_posix())
+    try:
+        img = Image.open(fp)
+        resized_img = img.resize((dim, dim), interpolation)
+        resized_img.save((output_path / fp.name).as_posix())
+    except Exception as e:
+        print("Problem with file: ", fp)
+        print(e)
 
 
 if __name__ == "__main__":
@@ -30,7 +34,7 @@ if __name__ == "__main__":
     if not output_path.exists():
         output_path.mkdir(parents=True)
 
-    files = dataset_path.glob("*.png")
+    files = list(dataset_path.glob("*.png"))
 
     with Parallel(n_jobs=10) as parallel:
         parallel(delayed(task)(f) for f in tqdm(files))

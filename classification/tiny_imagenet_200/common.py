@@ -18,7 +18,7 @@ def setup_logger(logger, log_filepath, level=logging.INFO):
     logger.addHandler(ch)
 
 
-def save_conf(config_file, logdir, logger, writer=None):
+def save_conf(config_file, logdir, logger, writer):
     conf_str = """
         Configuration file: {}
 
@@ -31,5 +31,4 @@ def save_conf(config_file, logdir, logger, writer=None):
             conf_str += l
     conf_str += "\n\n"
     logger.info(conf_str)
-    if writer is not None:
-        writer.add_text('Configuration', conf_str)
+    writer.add_text('Configuration', conf_str)

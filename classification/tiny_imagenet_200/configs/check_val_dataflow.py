@@ -1,28 +1,21 @@
-# Basic evaluation configuration file
-from torchvision.transforms import RandomVerticalFlip, RandomHorizontalFlip
-from torchvision.transforms import ToTensor
-from transforms import GlobalContrastNormalize
-
+# Check validation dataflow
+from configs.train_vgg16_bn_basic import TRAIN_TRANSFORMS, VAL_TRANSFORMS, TRAINVAL_SPLIT
+from dataflow import get_trainval_data_loaders
 
 SEED = 12345
 DEBUG = True
 
-OUTPUT_PATH = "/home/project/tiny_imagenet200_output"
-DATASET_PATH = "/home/local_data/tiny-imagenet-200/"
+OUTPUT_PATH = "/home/working_directory/ml/tmp/tiny_imagenet_200_output/val_dataflow"
+DATASET_PATH = "/home/fast_storage/tiny-imagenet-200"
 
-MODEL = OUTPUT_PATH + "/training_VGG_20180409_1302/model_VGG_45_val_loss=2.178473.pth"
-
-N_TTA = 10
+N_EPOCHS = 1
 
 BATCH_SIZE = 128
 NUM_WORKERS = 8
 
-TEST_TRANSFORMS = [
-    RandomHorizontalFlip(p=0.5),
-    RandomVerticalFlip(p=0.5),
-    ToTensor(),
-    # https://github.com/lisa-lab/pylearn2/blob/master/pylearn2/scripts/datasets/make_cifar10_gcn_whitened.py#L19
-    GlobalContrastNormalize(scale=55.0)
-]
-
-LOG_INTERVAL = 100
+_, DATA_LOADER = get_trainval_data_loaders(DATASET_PATH,
+                                           TRAIN_TRANSFORMS,
+                                           VAL_TRANSFORMS,
+                                           BATCH_SIZE, BATCH_SIZE,
+                                           TRAINVAL_SPLIT,
+                                           NUM_WORKERS, seed=SEED, cuda=True)

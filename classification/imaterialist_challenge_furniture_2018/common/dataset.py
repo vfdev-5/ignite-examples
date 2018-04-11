@@ -11,11 +11,15 @@ from torchvision.transforms import Compose
 
 class TrainvalFilesDataset(Dataset):
 
-    def __init__(self, path):
+    def __init__(self, path, corrupted_files=None):
         self.path = Path(path)
         assert self.path.exists(), "Train/Val dataset is not found at '{}'".format(path)
         files = self.path.glob("*.png")
         self.images = [f.as_posix() for f in files]
+        # remove corrupted files:
+        if corrupted_files is not None:
+            for f in corrupted_files:
+                self.images.remove(f)
         self.n = len(self.images)
         self.labels = [None] * self.n
         for i, f in enumerate(self.images):
@@ -65,7 +69,6 @@ class TransformedDataset(Dataset):
         return len(self.dataset)
 
     def __getitem__(self, index):
-
         img, label = self.dataset[index]
         img = self.transforms(img)
         if self.target_transforms is not None:
@@ -85,7 +88,10 @@ def get_data_loaders(train_dataset_path,
     if isinstance(val_data_transform, (list, tuple)):
         val_data_transform = Compose(val_data_transform)
 
-    train_dataset = TrainvalFilesDataset(train_dataset_path)
+    corrupted_files = [
+        # (Path(train_dataset_path) / "124682_20.png").as_posix(),
+    ]
+    train_dataset = TrainvalFilesDataset(train_dataset_path, corrupted_files=corrupted_files)
     val_dataset = TrainvalFilesDataset(val_dataset_path)
 
     train_dataset = TransformedDataset(train_dataset, transforms=read_image,

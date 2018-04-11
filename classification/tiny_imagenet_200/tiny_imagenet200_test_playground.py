@@ -24,23 +24,7 @@ from ignite.handlers import Timer
 from ignite._utils import to_variable, to_tensor
 
 from dataflow import get_test_data_loader
-
-
-def setup_logger(logger, output, level=logging.INFO):
-    logger.setLevel(level)
-    # create file handler which logs even debug messages
-    fh = logging.FileHandler(os.path.join(output, "eval.log"))
-    fh.setLevel(level)
-    # create console handler with a higher log level
-    ch = logging.StreamHandler()
-    ch.setLevel(level)
-    # create formatter and add it to the handlers
-    formatter = logging.Formatter("%(asctime)s|%(name)s|%(levelname)s| %(message)s")
-    fh.setFormatter(formatter)
-    ch.setFormatter(formatter)
-    # add the handlers to the logger
-    logger.addHandler(fh)
-    logger.addHandler(ch)
+from common import setup_logger, save_conf
 
 
 def write_model_graph(writer, model, cuda):
@@ -70,20 +54,6 @@ def create_inferencer(model, cuda=True):
     model.eval()
     inferencer = Engine(_update)
     return inferencer
-
-
-def save_conf(config_file, logger, writer):
-    conf_str = """
-        Test configuration file:
-        
-    """
-    with open(config_file, 'r') as reader:
-        lines = reader.readlines()
-        for l in lines:
-            conf_str += l
-    conf_str += "\n\n"
-    logger.info(conf_str)
-    writer.add_text('Configuration', conf_str)
 
 
 def load_config(config_filepath):
@@ -152,7 +122,7 @@ def run(config_file):
         print("Activated debug mode")
 
     logger = logging.getLogger("Tiny ImageNet 200: Inference")
-    setup_logger(logger, log_dir, log_level)
+    setup_logger(logger, os.path.join(log_dir, "test.log"), log_level)
 
     logger.debug("Setup tensorboard writer")
     writer = SummaryWriter(log_dir=os.path.join(log_dir, "tensorboard"))

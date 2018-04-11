@@ -1,6 +1,5 @@
-from __future__ import print_function, division, absolute_import
 
-import os
+from pathlib import Path
 import sys
 from argparse import ArgumentParser
 import random
@@ -16,16 +15,15 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-import torch
+from tqdm import tqdm
 
-try:
-    from tensorboardX import SummaryWriter
-except ImportError:
-    raise RuntimeError("No tensorboardX package is found. Please install with the command: \npip install tensorboardX")
+import torch
 
 from ignite.engines import Events, Engine
 from ignite.handlers import Timer
 
+# Load common module
+sys.path.insert(0, Path(__file__).absolute().parent.parent.as_posix())
 from common import setup_logger, save_conf
 
 
@@ -38,9 +36,7 @@ def create_dataflow_checker():
 
 
 def load_config(config_filepath):
-    assert os.path.exists(config_filepath), "Configuration file '{}' is not found".format(config_filepath)
-    # Handle local modules
-    sys.path.insert(0, os.path.dirname(__file__))
+    assert Path(config_filepath).exists(), "Configuration file '{}' is not found".format(config_filepath)
     # Load custom module
     spec = util.spec_from_file_location("config", config_filepath)
     custom_module = util.module_from_spec(spec)
@@ -48,7 +44,8 @@ def load_config(config_filepath):
     config = custom_module.__dict__
     assert "DATA_LOADER" in config, "DATA_LOADER parameter is not found in configuration file"
     assert "OUTPUT_PATH" in config, "OUTPUT_PATH is not found in the configuration file"
-    assert "N_EPOCHS" in config, "Number of epochs should be specified in the configuration file"
+    assert "N_EPOCHS" in config, "Number of epochs N_EPOCHS should be specified in the configuration file"
+    assert "N_CLASSES" in config, "Number of classes N_CLASSES should be specified in the configuration file"
     return config
 
 
@@ -92,14 +89,14 @@ def run(config_file):
     random.seed(seed)
     torch.manual_seed(seed)
 
-    output = config["OUTPUT_PATH"]
+    output = Path(config["OUTPUT_PATH"])
     debug = config.get("DEBUG", False)
 
     from datetime import datetime
     now = datetime.now()
-    log_dir = os.path.join(output, "check_dataflow_{}".format(now.strftime("%Y%m%d_%H%M")))
-    if not os.path.exists(log_dir):
-        os.makedirs(log_dir)
+    log_dir = output / ("check_dataflow_{}".format(now.strftime("%Y%m%d_%H%M")))
+    if not log_dir.exists():
+        log_dir.mkdir(parents=True)
 
     log_level = logging.INFO
     if debug:
@@ -107,12 +104,9 @@ def run(config_file):
         print("Activated debug mode")
 
     logger = logging.getLogger("Check dataflow")
-    setup_logger(logger, os.path.join(log_dir, "check.log"), log_level)
+    setup_logger(logger, (log_dir / "check.log").as_posix(), log_level)
 
-    logger.debug("Setup tensorboard writer")
-    writer = SummaryWriter(log_dir=os.path.join(log_dir, "tensorboard"))
-
-    save_conf(config_file, log_dir, logger, writer)
+    save_conf(config_file, log_dir, logger)
 
     cuda = torch.cuda.is_available()
     if cuda:
@@ -134,9 +128,8 @@ def run(config_file):
                  pause=Events.ITERATION_COMPLETED,
                  resume=Events.ITERATION_STARTED)
 
-    n_classes = 200
+    n_classes = config["N_CLASSES"]
     n_batches = len(data_loader)
-
     n_channels = 3
     y_counts_per_batch = np.zeros((n_batches, n_classes), dtype=np.int)
     x_mins_per_batch = np.zeros((n_batches, n_channels), dtype=np.float)
@@ -156,6 +149,9 @@ def run(config_file):
         x_shapes_per_batch[curr_iter, 0] = str(list(x.shape[1:]))
         x_dtypes_per_batch[curr_iter, 0] = type(x).__name__
 
+        if curr_iter % 100 == 0:
+            logger.debug("Iteration[{}/{}]".format(curr_iter, len(data_loader)))
+
     dataflow_checker.add_event_handler(Events.ITERATION_COMPLETED, log_dataflow_iteration, y_counts_per_batch)
 
     def log_dataflow_epoch(engine):
@@ -169,6 +165,7 @@ def run(config_file):
         dataflow_checker.run(data_loader, max_epochs=n_epochs)
     except KeyboardInterrupt:
         logger.info("Catched KeyboardInterrupt -> exit")
+        exit(0)
     except Exception as e:  # noqa
         logger.exception("")
         if debug:
@@ -178,19 +175,19 @@ def run(config_file):
                 IPython.embed()  # noqa
             except ImportError:
                 print("Failed to start IPython console")
+        raise e
 
     logger.debug("Dataflow check is ended")
-    writer.close()
 
     logger.debug("Create and write y_counts_per_batch.csv")
     cols = ["class_{}".format(i) for i in range(n_classes)]
     y_counts_df = pd.DataFrame(y_counts_per_batch, columns=cols)
-    y_counts_df.to_csv(os.path.join(log_dir, "y_counts_per_batch.csv"), index=False)
+    y_counts_df.to_csv((log_dir / "y_counts_per_batch.csv").as_posix(), index=False)
 
     # Save figure of total target distributions
     logger.debug("Save figure of total target distributions")
     fig = create_fig_target_distribution_per_batch(y_counts_df=y_counts_df, n_classes=n_classes, n_classes_per_fig=20)
-    fig.savefig(os.path.join(log_dir, "target_distribution_per_batch.png"))
+    fig.savefig((log_dir / "target_distribution_per_batch.png").as_posix())
     y_counts_df = None
     y_counts_per_batch = None
 
@@ -205,24 +202,24 @@ def run(config_file):
     x_stats_df[max_cols] = x_maxs_per_batch
     x_stats_df["shape"] = x_shapes_per_batch
     x_stats_df["dtype"] = x_dtypes_per_batch
-    x_stats_df.to_csv(os.path.join(log_dir, "x_stats_df.csv"), index=False)
+    x_stats_df.to_csv((log_dir / "x_stats_df.csv").as_posix(), index=False)
 
     # Save figure with sample mins, avgs, maxs
     logger.debug("Save figure with sample mins, avgs, maxs")
     fig = create_fig_samples_min_avg_max_per_batch(x_stats_df, min_cols, avg_cols, max_cols)
-    fig.savefig(os.path.join(log_dir, "samples_min_avg_max_per_batch.png"))
+    fig.savefig((log_dir / "samples_min_avg_max_per_batch.png").as_posix())
 
     logger.debug("Save figure with sample shapes")
     fig = plt.figure(figsize=(10, 10))
     ax = plt.subplot(1, 1, 1)
     sns.countplot(data=x_stats_df, x="shape", ax=ax)
-    fig.savefig(os.path.join(log_dir, "samples_shape_per_batch.png"))
+    fig.savefig((log_dir / "samples_shape_per_batch.png").as_posix())
 
     logger.debug("Save figure with sample dtypes")
     fig = plt.figure(figsize=(10, 10))
     ax = plt.subplot(1, 1, 1)
     sns.countplot(data=x_stats_df, x="dtype", ax=ax)
-    fig.savefig(os.path.join(log_dir, "samples_dtype_per_batch.png"))
+    fig.savefig((log_dir / "samples_dtype_per_batch.png").as_posix())
 
 
 if __name__ == "__main__":
