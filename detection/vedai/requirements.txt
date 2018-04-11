@@ -1,0 +1,10 @@
+numpy
+pandas
+matplotlib
+seaborn
+scikit-learn
+iterative-stratification
+imbalanced-learn
+git+https://github.com/pytorch/vision.git
+git+https://github.com/pytorch/ignite.git
+git+https://github.com/lanpa/tensorboard-pytorch.git
