@@ -15,8 +15,6 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-from tqdm import tqdm
-
 import torch
 
 from ignite.engines import Events, Engine
@@ -49,7 +47,8 @@ def load_config(config_filepath):
     return config
 
 
-def create_fig_target_distribution_per_batch(y_counts_df, n_classes, n_classes_per_fig=20):
+def create_fig_target_distribution_per_batch(y_counts_df, n_classes_per_fig=20):
+    n_classes = y_counts_df.shape[1]
     n = int(np.ceil(n_classes / n_classes_per_fig))
     m = min(3, n)
     k = int(np.ceil(n / m))
@@ -62,6 +61,25 @@ def create_fig_target_distribution_per_batch(y_counts_df, n_classes, n_classes_p
         axarr[i, j].set_title('Target distribution per batch')
         axarr[i, j].set_xlabel('Count')
         sns.boxplot(data=y_counts_df[classes], orient='h', ax=axarr[i, j])
+
+    return fig
+
+
+def create_fig_targets_distribution(y_counts_df, n_classes_per_fig=20):
+    n_classes = y_counts_df.shape[1]
+    n = int(np.ceil(n_classes / n_classes_per_fig))
+    m = min(3, n)
+    k = int(np.ceil(n / m))
+    y_total = y_counts_df.sum(axis=0)
+    fig, axarr = plt.subplots(k, m, figsize=(20, 20))
+
+    for c in range(min(k * m, n)):
+        i, j = np.unravel_index(c, dims=(k, m))
+        classes = y_total.index[c * n_classes_per_fig:(c + 1) * n_classes_per_fig]
+        axarr[i, j].set_title('Total targets distribution')
+        axarr[i, j].set_xlabel('Count')
+        sns.barplot(x=y_total[classes], y=classes, orient='h', ax=axarr[i, j])
+        axarr[i, j].set_xlim([0, y_total.max() * 1.05])
 
     return fig
 
@@ -185,9 +203,13 @@ def run(config_file):
     y_counts_df.to_csv((log_dir / "y_counts_per_batch.csv").as_posix(), index=False)
 
     # Save figure of total target distributions
-    logger.debug("Save figure of total target distributions")
-    fig = create_fig_target_distribution_per_batch(y_counts_df=y_counts_df, n_classes=n_classes, n_classes_per_fig=20)
+    logger.debug("Save figure of target distributions per batch")
+    fig = create_fig_target_distribution_per_batch(y_counts_df=y_counts_df, n_classes_per_fig=20)
     fig.savefig((log_dir / "target_distribution_per_batch.png").as_posix())
+
+    logger.debug("Save figure of total targets distributions")
+    fig = create_fig_targets_distribution(y_counts_df, n_classes_per_fig=20)
+    fig.savefig((log_dir / "targets_distribution.png").as_posix())
     y_counts_df = None
     y_counts_per_batch = None
 

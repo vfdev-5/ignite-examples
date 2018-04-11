@@ -16,5 +16,7 @@ python scripts/download_images.py test.json input/test
 Total dataset size is ~ 110GB
 
   
+## Training
+
 
 
