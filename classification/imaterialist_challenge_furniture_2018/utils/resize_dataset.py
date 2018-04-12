@@ -1,12 +1,18 @@
 from pathlib import Path
 from argparse import ArgumentParser
+from functools import partial
+
 from tqdm import tqdm
 from PIL import Image
+
 
 from joblib import Parallel, delayed
 
 
-def task(fp):
+def task(fp, output_path, dim, interpolation):
+    # check if output exists:
+    if (output_path / fp.name).exists():
+        return
     try:
         img = Image.open(fp)
         resized_img = img.resize((dim, dim), interpolation)
@@ -36,5 +42,7 @@ if __name__ == "__main__":
 
     files = list(dataset_path.glob("*.png"))
 
+    predefined_task = partial(task, output_path=output_path, dim=dim, interpolation=interpolation)
+
     with Parallel(n_jobs=10) as parallel:
-        parallel(delayed(task)(f) for f in tqdm(files))
+        parallel(delayed(predefined_task)(f) for f in tqdm(files))

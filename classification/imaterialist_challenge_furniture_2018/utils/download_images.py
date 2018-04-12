@@ -12,13 +12,12 @@
 # resume a partially completed download. All images will be saved in the JPG
 # format with 90% compression quality.
 
-import sys, os, multiprocessing, urllib3, csv
+import sys, os, multiprocessing
+import requests
 from PIL import Image
 from io import BytesIO
 from tqdm  import tqdm
 import json
-
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
 def ParseData(data_file):
@@ -47,14 +46,16 @@ def DownloadImage(key_url):
     filename = os.path.join(out_dir, '%s.png' % key)
 
     if os.path.exists(filename):
-        print('Image %s already exists. Skipping download.' % filename)
+        # print('Image %s already exists. Skipping download.' % filename)
+        return
+    try:
+        response = requests.get(url)
+    except:
+        print('Warning: Could not download image %s from %s' % (key, url))
         return
 
-    try:
-        http = urllib3.PoolManager(10)
-        response = http.request('GET', url, timeout=10)
-        image_data = response.data
-    except:
+    image_data = response.content
+    if response.status_code != 200:
         print('Warning: Could not download image %s from %s' % (key, url))
         return
 
