@@ -8,12 +8,6 @@ from importlib import util
 
 import numpy as np
 import pandas as pd
-# Change matplotlib backend
-import matplotlib
-matplotlib.use('Agg')
-
-import matplotlib.pyplot as plt
-import seaborn as sns
 
 import torch
 
@@ -23,6 +17,9 @@ from ignite.handlers import Timer
 # Load common module
 sys.path.insert(0, Path(__file__).absolute().parent.parent.as_posix())
 from common import setup_logger, save_conf
+from common.figures import create_fig_target_distribution_per_batch, \
+    create_fig_targets_distribution, create_fig_samples_min_avg_max_per_batch, \
+    create_fig_samples_param_per_batch
 
 
 def create_dataflow_checker():
@@ -45,56 +42,6 @@ def load_config(config_filepath):
     assert "N_EPOCHS" in config, "Number of epochs N_EPOCHS should be specified in the configuration file"
     assert "N_CLASSES" in config, "Number of classes N_CLASSES should be specified in the configuration file"
     return config
-
-
-def create_fig_target_distribution_per_batch(y_counts_df, n_classes_per_fig=20):
-    n_classes = y_counts_df.shape[1]
-    n = int(np.ceil(n_classes / n_classes_per_fig))
-    m = min(3, n)
-    k = int(np.ceil(n / m))
-
-    fig, axarr = plt.subplots(k, m, figsize=(20, 20))
-
-    for c in range(min(k * m, n)):
-        i, j = np.unravel_index(c, dims=(k, m))
-        classes = y_counts_df.columns[c * n_classes_per_fig:(c + 1) * n_classes_per_fig]
-        axarr[i, j].set_title('Target distribution per batch')
-        axarr[i, j].set_xlabel('Count')
-        sns.boxplot(data=y_counts_df[classes], orient='h', ax=axarr[i, j])
-
-    return fig
-
-
-def create_fig_targets_distribution(y_counts_df, n_classes_per_fig=20):
-    n_classes = y_counts_df.shape[1]
-    n = int(np.ceil(n_classes / n_classes_per_fig))
-    m = min(3, n)
-    k = int(np.ceil(n / m))
-    y_total = y_counts_df.sum(axis=0)
-    fig, axarr = plt.subplots(k, m, figsize=(20, 20))
-
-    for c in range(min(k * m, n)):
-        i, j = np.unravel_index(c, dims=(k, m))
-        classes = y_total.index[c * n_classes_per_fig:(c + 1) * n_classes_per_fig]
-        axarr[i, j].set_title('Total targets distribution')
-        axarr[i, j].set_xlabel('Count')
-        sns.barplot(x=y_total[classes], y=classes, orient='h', ax=axarr[i, j])
-        axarr[i, j].set_xlim([0, y_total.max() * 1.05])
-
-    return fig
-
-
-def create_fig_samples_min_avg_max_per_batch(x_stats_df, min_cols, avg_cols, max_cols):
-    n_channels = len(min_cols)
-    fig, axarr = plt.subplots(n_channels, 3, figsize=(20, 20))
-    fig.suptitle("Sample min/avg/max per bands")
-
-    with sns.axes_style("whitegrid"):
-        for i in range(n_channels):
-            for j, col in enumerate([min_cols, avg_cols, max_cols]):
-                axarr[i, j].set_title(col[i])
-                axarr[i, j].hist(x_stats_df[col[i]], bins=100)
-    return fig
 
 
 def run(config_file):
@@ -148,6 +95,7 @@ def run(config_file):
 
     n_classes = config["N_CLASSES"]
     n_batches = len(data_loader)
+
     n_channels = 3
     y_counts_per_batch = np.zeros((n_batches, n_classes), dtype=np.int)
     x_mins_per_batch = np.zeros((n_batches, n_channels), dtype=np.float)
@@ -210,8 +158,8 @@ def run(config_file):
     logger.debug("Save figure of total targets distributions")
     fig = create_fig_targets_distribution(y_counts_df, n_classes_per_fig=20)
     fig.savefig((log_dir / "targets_distribution.png").as_posix())
-    y_counts_df = None
-    y_counts_per_batch = None
+    del y_counts_df
+    del y_counts_per_batch
 
     logger.debug("Create and write x_stats_df.csv")
     min_cols = ["b{}_min".format(i) for i in range(n_channels)]
@@ -232,15 +180,11 @@ def run(config_file):
     fig.savefig((log_dir / "samples_min_avg_max_per_batch.png").as_posix())
 
     logger.debug("Save figure with sample shapes")
-    fig = plt.figure(figsize=(10, 10))
-    ax = plt.subplot(1, 1, 1)
-    sns.countplot(data=x_stats_df, x="shape", ax=ax)
+    fig = create_fig_samples_param_per_batch(x_stats_df, "shape")
     fig.savefig((log_dir / "samples_shape_per_batch.png").as_posix())
 
     logger.debug("Save figure with sample dtypes")
-    fig = plt.figure(figsize=(10, 10))
-    ax = plt.subplot(1, 1, 1)
-    sns.countplot(data=x_stats_df, x="dtype", ax=ax)
+    fig = create_fig_samples_param_per_batch(x_stats_df, "dtype")
     fig.savefig((log_dir / "samples_dtype_per_batch.png").as_posix())
 
 

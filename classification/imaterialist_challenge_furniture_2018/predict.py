@@ -1,6 +1,4 @@
-from __future__ import print_function
-
-import os
+from pathlib import Path
 import sys
 from argparse import ArgumentParser
 import random
@@ -12,7 +10,6 @@ import pandas as pd
 
 import torch
 from torch.nn import Module
-from torchvision.transforms import ToTensor
 
 try:
     from tensorboardX import SummaryWriter
@@ -23,24 +20,24 @@ from ignite.engines import Events, Engine
 from ignite.handlers import Timer
 from ignite._utils import to_variable, to_tensor
 
-from dataflow import get_test_data_loader
+# Load common module
+sys.path.insert(0, Path(__file__).absolute().parent.parent.as_posix())
 from common import setup_logger, save_conf
 
 
 def create_inferencer(model, cuda=True):
 
     def _prepare_batch(batch):
-        x, path = batch
+        x, index = batch
         x = to_variable(x, cuda=cuda)
-        return x, path
+        return x, index
 
     def _update(engine, batch):
-        x, files = _prepare_batch(batch)
+        x, indices = _prepare_batch(batch)
         y_pred = model(x)
         return {
-            "x": to_tensor(x, cpu=True),
             "y_pred": to_tensor(y_pred, cpu=True),
-            "files": files
+            "indices": indices
         }
 
     model.eval()
@@ -49,47 +46,41 @@ def create_inferencer(model, cuda=True):
 
 
 def load_config(config_filepath):
-    assert os.path.exists(config_filepath), "Configuration file '{}' is not found".format(config_filepath)
-    # Handle local modules
-    sys.path.insert(0, os.path.dirname(__file__))
+    assert Path(config_filepath).exists(), "Configuration file '{}' is not found".format(config_filepath)
     # Load custom module
     spec = util.spec_from_file_location("config", config_filepath)
     custom_module = util.module_from_spec(spec)
     spec.loader.exec_module(custom_module)
     config = custom_module.__dict__
-    assert "DATASET_PATH" in config, "DATASET_PATH parameter is not found in configuration file"
-    assert os.path.exists(config["DATASET_PATH"]), \
-        "Dataset '{}' is not found".format(config["DATASET_PATH"]) + \
-        "Dataset can be downloaded from : http://cs231n.stanford.edu/tiny-imagenet-200.zip"
-
+    assert "TEST_LOADER" in config, "TEST_LOADER parameter is not found in configuration file"
     assert "OUTPUT_PATH" in config, "OUTPUT_PATH is not found in the configuration file"
+    assert "N_CLASSES" in config, "N_CLASSES is not found in the configuration file"
+    assert "SAMPLE_SUBMISSION_PATH" in config, "SAMPLE_SUBMISSION_PATH is not found in the configuration file"
+    assert Path(config["SAMPLE_SUBMISSION_PATH"]).exists(), \
+        "File '{}' is not found".format(config["SAMPLE_SUBMISSION_PATH"])
 
     if "N_TTA" not in config:
         config["N_TTA"] = 5
 
     assert "MODEL" in config, "MODEL is not found in configuration file"
-    assert isinstance(config["MODEL"], str) and os.path.isfile(config["MODEL"]), \
+    assert isinstance(config["MODEL"], str) and Path(config["MODEL"]).is_file(), \
         "Model is not found at '{}'".format(config["MODEL"])
     config["MODEL"] = torch.load(config["MODEL"])
     assert isinstance(config["MODEL"], Module), \
         "Model should be an instance of torch.nn.Module, but given {}".format(type(config["MODEL"]))
 
-    if "TEST_TRANSFORMS" not in config:
-        config["TEST_TRANSFORMS"] = [ToTensor(), ]
-
     return config
 
 
-def write_submission(files, y_preds, classes, submission_filepath):
-    y_text = [classes[y] for y in y_preds]
-    files = [os.path.basename(f) for f in files]
-    df = pd.DataFrame(index=files, data=y_text)
-    df.to_csv(submission_filepath, sep=' ', header=False)
+def write_submission(indices, y_preds, sample_submission_path, submission_filepath):
+    df = pd.read_csv(sample_submission_path, index_col='id')
+    df.loc[indices, 'predicted'] = y_preds
+    df.to_csv(submission_filepath)
 
 
 def run(config_file):
 
-    print("--- Tiny ImageNet 200 Playground : Inference --- ")
+    print("--- iMaterialist 2018 : Inference --- ")
 
     print("Load config file ... ")
     config = load_config(config_file)
@@ -98,29 +89,32 @@ def run(config_file):
     random.seed(seed)
     torch.manual_seed(seed)
 
-    output = config["OUTPUT_PATH"]
+    sample_submission_path = config["SAMPLE_SUBMISSION_PATH"]
+
+    output = Path(config["OUTPUT_PATH"])
     model = config["MODEL"]
     model_name = model.__class__.__name__
     debug = config.get("DEBUG", False)
 
     from datetime import datetime
     now = datetime.now()
-    log_dir = os.path.join(output, "inference_{}_{}".format(model_name, now.strftime("%Y%m%d_%H%M")))
-    if not os.path.exists(log_dir):
-        os.makedirs(log_dir)
+    log_dir = output / "inference_{}_{}".format(model_name, now.strftime("%Y%m%d_%H%M"))
+    assert not log_dir.exists(), \
+        "Output logging directory '{}' already existing".format(log_dir)
+    log_dir.mkdir(parents=True)
 
     log_level = logging.INFO
     if debug:
         log_level = logging.DEBUG
         print("Activated debug mode")
 
-    logger = logging.getLogger("Tiny ImageNet 200: Inference")
-    setup_logger(logger, os.path.join(log_dir, "test.log"), log_level)
+    logger = logging.getLogger("iMaterialist 2018: Inference")
+    setup_logger(logger, (log_dir / "train.log").as_posix(), log_level)
 
     logger.debug("Setup tensorboard writer")
-    writer = SummaryWriter(log_dir=os.path.join(log_dir, "tensorboard"))
+    writer = SummaryWriter(log_dir=(log_dir / "tensorboard").as_posix())
 
-    save_conf(config_file, log_dir, logger, writer)
+    save_conf(config_file, log_dir.as_posix(), logger, writer)
 
     cuda = torch.cuda.is_available()
     if cuda:
@@ -130,16 +124,14 @@ def run(config_file):
         model = model.cuda()
 
     logger.debug("Setup test dataloader")
-    dataset_path = config["DATASET_PATH"]
-    test_data_transform = config["TEST_TRANSFORMS"]
-    batch_size = config.get("BATCH_SIZE", 64)
-    num_workers = config.get("NUM_WORKERS", 8)
-    test_loader = get_test_data_loader(dataset_path, test_data_transform, batch_size, num_workers, cuda=cuda)
+    test_loader = config["TEST_LOADER"]
 
     logger.debug("Setup ignite trainer and evaluator")
     inferencer = create_inferencer(model, cuda=cuda)
 
     n_tta = config["N_TTA"]
+    n_classes = config["N_CLASSES"]
+    batch_size = test_loader.batch_size
 
     logger.debug("Setup handlers")
     # Setup timer to measure evaluation time
@@ -150,8 +142,8 @@ def run(config_file):
                  pause=Events.ITERATION_COMPLETED)
 
     n_samples = len(test_loader.dataset)
-    files = np.zeros((n_samples, ), dtype=np.object)
-    y_probas_tta = np.zeros((n_samples, 200, n_tta))
+    indices = np.zeros((n_samples, ), dtype=np.int)
+    y_probas_tta = np.zeros((n_samples, n_classes, n_tta))
 
     @inferencer.on(Events.EPOCH_COMPLETED)
     def log_tta(engine):
@@ -166,7 +158,7 @@ def run(config_file):
         batch_y_probas = output['y_pred'].numpy()
         y_probas_tta[start_index:end_index, :, tta_index] = batch_y_probas
         if tta_index == 0:
-            files[start_index:end_index] = output['files']
+            indices[start_index:end_index] = output['indices']
 
     logger.debug("Start inference")
     try:
@@ -182,19 +174,17 @@ def run(config_file):
                 IPython.embed()  # noqa
             except ImportError:
                 print("Failed to start IPython console")
-    writer.close()
 
     # Average probabilities:
     y_probas = np.mean(y_probas_tta, axis=-1)
-    y_preds = np.argmax(y_probas, axis=-1)
+    y_preds = np.argmax(y_probas, axis=-1) + 1  # as labels are one-based
 
     logger.info("Write submission file")
-    submission_filepath = os.path.join(log_dir, "predictions.csv")
-    write_submission(files, y_preds, test_loader.dataset.classes, submission_filepath)
+    submission_filepath = log_dir / "predictions.csv"
+    write_submission(indices, y_preds, sample_submission_path, submission_filepath)
 
 
 if __name__ == "__main__":
-
     parser = ArgumentParser()
     parser.add_argument("config_file", type=str, help="Configuration file. See examples in configs/")
     args = parser.parse_args()
