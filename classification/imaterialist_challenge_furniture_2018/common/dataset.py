@@ -39,14 +39,14 @@ class TestFilesDataset(Dataset):
         path = Path(path)
         assert path.exists(), "Test dataset is not found at '{}'".format(path)
         files = path.glob("*.png")
-        self.images = [f.as_posix() for f in files]
+        self.images = [f for f in files]
         self.n = len(self.images)
 
     def __len__(self):
         return self.n
 
     def __getitem__(self, index):
-        return self.images[index]
+        return self.images[index].as_posix(), int(self.images[index].stem)
 
 
 def read_image(fp):
@@ -109,3 +109,20 @@ def get_data_loaders(train_dataset_path,
                             num_workers=num_workers, pin_memory=cuda)
 
     return train_loader, val_loader
+
+
+def get_test_data_loader(dataset_path,
+                         test_data_transform,
+                         batch_size,
+                         num_workers, cuda=True):
+
+    if isinstance(test_data_transform, (list, tuple)):
+        test_data_transform.insert(0, read_image)
+        test_data_transform = Compose(test_data_transform)
+
+    test_dataset = TestFilesDataset(dataset_path)
+    test_dataset = TransformedDataset(test_dataset, transforms=test_data_transform)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size,
+                             shuffle=False, drop_last=False,
+                             num_workers=num_workers, pin_memory=cuda)
+    return test_loader

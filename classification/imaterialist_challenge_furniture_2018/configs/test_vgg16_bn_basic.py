@@ -1,28 +1,44 @@
-# # Basic evaluation configuration file
-# from torchvision.transforms import RandomVerticalFlip, RandomHorizontalFlip
-# from torchvision.transforms import ToTensor
-# from transforms import GlobalContrastNormalize
-#
-#
-# SEED = 12345
-# DEBUG = True
-#
-# OUTPUT_PATH = "/home/project/tiny_imagenet200_output"
-# DATASET_PATH = "/home/local_data/tiny-imagenet-200/"
-#
-# MODEL = OUTPUT_PATH + "/training_VGG_20180409_1302/model_VGG_45_val_loss=2.178473.pth"
-#
-# N_TTA = 10
-#
-# BATCH_SIZE = 128
-# NUM_WORKERS = 8
-#
-# TEST_TRANSFORMS = [
-#     RandomHorizontalFlip(p=0.5),
-#     RandomVerticalFlip(p=0.5),
-#     ToTensor(),
-#     # https://github.com/lisa-lab/pylearn2/blob/master/pylearn2/scripts/datasets/make_cifar10_gcn_whitened.py#L19
-#     GlobalContrastNormalize(scale=55.0)
-# ]
-#
-# LOG_INTERVAL = 100
+# Basic training configuration file
+from pathlib import Path
+from torchvision.transforms import RandomVerticalFlip, RandomHorizontalFlip, CenterCrop
+from torchvision.transforms import RandomApply, RandomAffine
+from torchvision.transforms import ToTensor, Normalize
+from common.dataset import get_test_data_loader
+
+
+SEED = 12345
+DEBUG = True
+
+OUTPUT_PATH = "output"
+dataset_path = Path("/home/fast_storage/imaterialist-challenge-furniture-2018/")
+SAMPLE_SUBMISSION_PATH = dataset_path / "sample_submission_randomlabel.csv"
+
+
+TEST_TRANSFORMS = [
+    RandomApply(
+        [RandomAffine(degrees=45, translate=(0.1, 0.1), scale=(0.7, 1.2), resample=2), ],
+        p=0.5
+    ),
+    CenterCrop(size=224),
+    RandomHorizontalFlip(p=0.5),
+    RandomVerticalFlip(p=0.5),
+    ToTensor(),
+    Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+]
+
+N_CLASSES = 128
+BATCH_SIZE = 32
+NUM_WORKERS = 8
+
+TEST_LOADER = get_test_data_loader(
+    dataset_path=dataset_path / "test_400x400",
+    test_data_transform=TEST_TRANSFORMS,
+    batch_size=BATCH_SIZE,
+    num_workers=NUM_WORKERS,
+    cuda=True)
+
+
+MODEL = (Path(OUTPUT_PATH) / "training_FurnitureVGG16BN_20180410_2236" /
+         "model_FurnitureVGG16BN_61_val_loss=0.8866565.pth").as_posix()
+
+N_TTA = 10

@@ -36,5 +36,13 @@ tensorboard --logdir=tiny_imagenet200_output
 
 ## Evaluation
 
+Same as in the training part, edit a conifguration file, for example, `configs/test_vgg16_bn_basic.py`
+and run the following script:
+```bash
+python tiny_imagenet200_test_playground.py configs/test_vgg16_bn_basic.py
+``` 
+
+Predictions are stored in a CSV file in the output folder.
+
 
  

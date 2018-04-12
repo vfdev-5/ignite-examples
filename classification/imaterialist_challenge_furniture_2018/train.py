@@ -121,8 +121,9 @@ def run(config_file):
     from datetime import datetime
     now = datetime.now()
     log_dir = output / ("training_{}_{}".format(model_name, now.strftime("%Y%m%d_%H%M")))
-    if not log_dir.exists():
-        log_dir.mkdir(parents=True)
+    assert not log_dir.exists(), \
+        "Output logging directory '{}' already existing".format(log_dir)
+    log_dir.mkdir(parents=True)
 
     log_level = logging.INFO
     if debug:
