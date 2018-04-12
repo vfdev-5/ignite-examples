@@ -56,7 +56,7 @@ def get_trainval_resampled_indices(dataset, trainval_split, fold_index=0, xy_tra
                                                      fold_index=fold_index,
                                                      xy_transforms=xy_transforms,
                                                      batch_size=batch_size,
-                                                     n_workers=n_workers)
+                                                     n_workers=n_workers, return_targets=True)
 
     y_unique = np.unique(y, axis=0)
     y_ohe_to_index_map = dict([(tuple(y.tolist()), i) for i, y in enumerate(y_unique)])
@@ -70,7 +70,8 @@ def get_trainval_resampled_indices(dataset, trainval_split, fold_index=0, xy_tra
     return train_index_resampled, val_index_resampled
 
 
-def get_trainval_indices(dataset, trainval_split, fold_index=0, xy_transforms=None, batch_size=32, n_workers=8):
+def get_trainval_indices(dataset, trainval_split, fold_index=0, xy_transforms=None,
+                         batch_size=32, n_workers=8, return_targets=False):
 
     assert isinstance(trainval_split, _BaseKFold)
     targets_dataset = TransformedDataset(dataset, xy_transforms=xy_transforms)
@@ -93,7 +94,9 @@ def get_trainval_indices(dataset, trainval_split, fold_index=0, xy_transforms=No
     for i, (train_index, test_index) in enumerate(trainval_split.split(x, y)):
         if i == fold_index:
             break
-    return train_index, test_index, y
+    if return_targets:
+        return train_index, test_index, y
+    return train_index, test_index
 
 
 def resample_indices(indices, y, seed=None):

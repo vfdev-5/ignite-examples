@@ -122,8 +122,8 @@ class SSD300(nn.Module):
         self.loc_layers = nn.ModuleList()
         self.cls_layers = nn.ModuleList()
         for i in range(len(self.in_channels)):
-        	self.loc_layers += [nn.Conv2d(self.in_channels[i], self.num_anchors[i]*4, kernel_size=3, padding=1)]
-        	self.cls_layers += [nn.Conv2d(self.in_channels[i], self.num_anchors[i]*self.num_classes, kernel_size=3, padding=1)]
+            self.loc_layers += [nn.Conv2d(self.in_channels[i], self.num_anchors[i]*4, kernel_size=3, padding=1)]
+            self.cls_layers += [nn.Conv2d(self.in_channels[i], self.num_anchors[i]*self.num_classes, kernel_size=3, padding=1)]
 
     def forward(self, x):
         loc_preds = []

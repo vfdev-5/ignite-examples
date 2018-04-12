@@ -3,7 +3,6 @@ import math
 import torch
 import itertools
 
-from customized_torchcv.utils import meshgrid
 from customized_torchcv.utils.box import box_iou, box_nms, change_box_order
 
 
@@ -67,13 +66,13 @@ class SSDBoxCoder:
         masked_ious = ious.clone()
         while True:
             i, j = argmax(masked_ious)
-            if masked_ious[i,j] < 1e-6:
+            if masked_ious[i, j] < 1e-6:
                 break
             index[i] = j
-            masked_ious[i,:] = 0
-            masked_ious[:,j] = 0
+            masked_ious[i, :] = 0
+            masked_ious[:, j] = 0
 
-        mask = (index<0) & (ious.max(1)[0]>=0.5)
+        mask = (index < 0) & (ious.max(1)[0] >= 0.5)
         if mask.any():
             index[mask] = ious[mask.nonzero().squeeze()].max(1)[1]
 
@@ -84,7 +83,7 @@ class SSDBoxCoder:
         variances = (0.1, 0.2)
         loc_xy = (boxes[:, :2]-default_boxes[:, :2]) / default_boxes[:, 2:] / variances[0]
         loc_wh = torch.log(boxes[:, 2:]/default_boxes[:, 2:]) / variances[1]
-        loc_targets = torch.cat([loc_xy,loc_wh], 1)
+        loc_targets = torch.cat([loc_xy, loc_wh], 1)
         cls_targets = 1 + labels[index.clamp(min=0)]
         cls_targets[index < 0] = 0
         return loc_targets, cls_targets

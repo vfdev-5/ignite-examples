@@ -100,12 +100,14 @@ def get_parsed_target(target_filename):
 
 class VedaiFiles512x512(Dataset):
 
-    def __init__(self, path, mode='train', fold_index=1, img_type='co'):
+    def __init__(self, path, mode='train', fold_index=1, img_type='co', max_n_samples=None):
         assert mode in ('train', 'test')
         self.mode = mode
         ds = _VedaiFiles(path, img_type=img_type, option='512')
         train_indices, test_indices = ds.get_train_test_indices(fold_index)
         indices = train_indices if mode == 'train' else test_indices
+        if max_n_samples is not None:
+            indices = indices[:max_n_samples]
         self.samples = [ds[i] for i in indices]
 
     def __len__(self):
