@@ -5,6 +5,8 @@ import random
 import logging
 from importlib import util
 
+import numpy as np
+from PIL import Image
 
 import torch
 from torch import nn
@@ -17,24 +19,28 @@ except ImportError:
     raise RuntimeError("No tensorboardX package is found. Please install with the command: \npip install tensorboardX")
 
 from ignite.engines import Events, create_supervised_evaluator, Engine
-from ignite.metrics import CategoricalAccuracy, Loss
+from ignite.metrics import CategoricalAccuracy, Loss, Precision, Recall
 from ignite.handlers import ModelCheckpoint, Timer, EarlyStopping
 from ignite._utils import to_variable, to_tensor
 
 # Load common module
 sys.path.insert(0, Path(__file__).absolute().parent.parent.as_posix())
 from common import setup_logger, save_conf
+from common.figures import create_fig_param_per_class
 
 
-def write_model_graph(writer, model, cuda):
+def write_model_graph(writer, model, data_loader, cuda):
+    data_loader_iter = iter(data_loader)
+    x, y = next(data_loader_iter)
+    x = to_variable(x, cuda=cuda)
     try:
-        dummy_input = to_variable(torch.rand(10, 3, 64, 64), cuda=cuda)
-        writer.add_graph(model, dummy_input)
+        writer.add_graph(model, x)
     except Exception as e:
         print("Failed to save model graph: {}".format(e))
 
 
 def create_supervised_trainer(model, optimizer, loss_fn, metrics={}, cuda=False):
+
     def _prepare_batch(batch):
         x, y = batch
         x = to_variable(x, cuda=cuda)
@@ -145,10 +151,10 @@ def run(config_file):
         cudnn.benchmark = True
         model = model.cuda()
 
-    write_model_graph(writer, model=model, cuda=cuda)
-
     logger.debug("Setup train/val dataloaders")
     train_loader, val_loader = config["TRAIN_LOADER"], config["VAL_LOADER"]
+
+    write_model_graph(writer, model=model, data_loader=train_loader, cuda=cuda)
 
     optimizer = config["OPTIM"]
 
@@ -168,13 +174,17 @@ def run(config_file):
     trainer = create_supervised_trainer(model, optimizer, criterion,
                                         metrics={
                                             'accuracy': CategoricalAccuracy(output_transform=output_transform),
-                                            'nll': Loss(criterion, output_transform=output_transform)
+                                            'nll': Loss(criterion, output_transform=output_transform),
+                                            'precision': Precision(output_transform=output_transform),
+                                            'recall': Recall(output_transform=output_transform)
                                         },
                                         cuda=cuda)
     evaluator = create_supervised_evaluator(model,
                                             metrics={
                                                 'accuracy': CategoricalAccuracy(),
-                                                'nll': Loss(criterion)
+                                                'nll': Loss(criterion),
+                                                'precision': Precision(),
+                                                'recall': Recall(),
                                             },
                                             cuda=cuda)
 
@@ -217,26 +227,52 @@ def run(config_file):
                 logger.debug("Learning rate (group {}): {}".format(i, lr))
                 writer.add_scalar("learning_rate_group_{}".format(i), lr, engine.state.epoch)
 
+    log_images_dir = log_dir / "figures"
+    log_images_dir.mkdir(parents=True)
+
+    def log_precision_recall_results(engine, epoch, mode):
+        for metric_name in ['precision', 'recall']:
+            value = engine.state.metrics[metric_name].cpu() if cuda else engine.state.metrics[metric_name]
+            avg_value = torch.mean(value)
+            writer.add_scalar("{}/avg_{}".format(mode, metric_name), avg_value, epoch)
+            # Save metric per class figure
+            sorted_values = value.numpy()
+            indices = np.argsort(sorted_values)
+            sorted_values = sorted_values[indices]
+            n_classes = len(sorted_values)
+            classes = np.array(["class_{}".format(i) for i in range(n_classes)])
+            sorted_classes = classes[indices]
+            fig = create_fig_param_per_class(sorted_values, metric_name, classes=sorted_classes, n_classes_per_fig=20)
+            fname = log_images_dir / ("{}_{}_{}_per_class.png".format(mode, epoch, metric_name))
+            fig.savefig(fname.as_posix())
+            # Add figure in TB
+            img = Image.open(fname.as_posix())
+            tag = "{}_{}".format(mode, metric_name)
+            writer.add_image(tag, np.asarray(img), epoch)
+
     @trainer.on(Events.EPOCH_COMPLETED)
     def log_training_metrics(engine):
-
+        epoch = engine.state.epoch
         logger.info("One epoch training time (seconds): {}".format(timer.value()))
         logger.info("Training Results - Epoch: {}  Avg accuracy: {:.2f} Avg loss: {:.2f}"
                     .format(engine.state.epoch, engine.state.metrics['accuracy'], engine.state.metrics['nll']))
-        writer.add_scalar("training/avg_accuracy", engine.state.metrics['accuracy'], engine.state.epoch)
-        writer.add_scalar("training/avg_error", 1.0 - engine.state.metrics['accuracy'], engine.state.epoch)
-        writer.add_scalar("training/avg_loss", engine.state.metrics['nll'], engine.state.epoch)
+        writer.add_scalar("training/avg_accuracy", engine.state.metrics['accuracy'], epoch)
+        writer.add_scalar("training/avg_error", 1.0 - engine.state.metrics['accuracy'], epoch)
+        writer.add_scalar("training/avg_loss", engine.state.metrics['nll'], epoch)
+        log_precision_recall_results(engine, epoch, "training")
 
     @trainer.on(Events.EPOCH_COMPLETED)
     def log_validation_results(engine):
+        epoch = engine.state.epoch
         metrics = evaluator.run(val_loader).metrics
         avg_accuracy = metrics['accuracy']
         avg_nll = metrics['nll']
-        writer.add_scalar("validation/avg_loss", avg_nll, engine.state.epoch)
-        writer.add_scalar("validation/avg_accuracy", avg_accuracy, engine.state.epoch)
-        writer.add_scalar("validation/avg_error", 1.0 - avg_accuracy, engine.state.epoch)
+        writer.add_scalar("validation/avg_loss", avg_nll, epoch)
+        writer.add_scalar("validation/avg_accuracy", avg_accuracy, epoch)
+        writer.add_scalar("validation/avg_error", 1.0 - avg_accuracy, epoch)
         logger.info("Validation Results - Epoch: {}  Avg accuracy: {:.2f} Avg loss: {:.2f}"
                     .format(engine.state.epoch, avg_accuracy, avg_nll))
+        log_precision_recall_results(evaluator, epoch, "validation")
 
     if reduce_on_plateau is not None:
         @evaluator.on(Events.COMPLETED)
@@ -297,6 +333,7 @@ def run(config_file):
 
 
 if __name__ == "__main__":
+
     parser = ArgumentParser()
     parser.add_argument("config_file", type=str, help="Configuration file. See examples in configs/")
     args = parser.parse_args()

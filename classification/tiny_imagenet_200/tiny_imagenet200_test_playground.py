@@ -27,14 +27,6 @@ from dataflow import get_test_data_loader
 from common import setup_logger, save_conf
 
 
-def write_model_graph(writer, model, cuda):
-    try:
-        dummy_input = to_variable(torch.rand(10, 3, 64, 64), cuda=cuda)
-        writer.add_graph(model, dummy_input)
-    except Exception as e:
-        print("Failed to save model graph: {}".format(e))
-
-
 def create_inferencer(model, cuda=True):
 
     def _prepare_batch(batch):
@@ -136,8 +128,6 @@ def run(config_file):
         from torch.backends import cudnn
         cudnn.benchmark = True
         model = model.cuda()
-
-    write_model_graph(writer, model=model, cuda=cuda)
 
     logger.debug("Setup test dataloader")
     dataset_path = config["DATASET_PATH"]

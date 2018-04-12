@@ -5,7 +5,7 @@ from dataflow import get_trainval_data_loaders
 SEED = 12345
 DEBUG = True
 
-OUTPUT_PATH = "/home/working_directory/ml/tmp/tiny_imagenet_200_output/val_dataflow"
+OUTPUT_PATH = "output/val_dataflow"
 DATASET_PATH = "/home/fast_storage/tiny-imagenet-200"
 
 N_EPOCHS = 1
