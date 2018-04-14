@@ -109,7 +109,7 @@ def run(config_file):
         print("Activated debug mode")
 
     logger = logging.getLogger("iMaterialist 2018: Inference")
-    setup_logger(logger, (log_dir / "train.log").as_posix(), log_level)
+    setup_logger(logger, (log_dir / "predict.log").as_posix(), log_level)
 
     logger.debug("Setup tensorboard writer")
     writer = SummaryWriter(log_dir=(log_dir / "tensorboard").as_posix())
@@ -126,7 +126,7 @@ def run(config_file):
     logger.debug("Setup test dataloader")
     test_loader = config["TEST_LOADER"]
 
-    logger.debug("Setup ignite trainer and evaluator")
+    logger.debug("Setup ignite inferencer")
     inferencer = create_inferencer(model, cuda=cuda)
 
     n_tta = config["N_TTA"]

@@ -153,6 +153,10 @@ def run(config_file):
 
     logger.debug("Setup train/val dataloaders")
     train_loader, val_loader = config["TRAIN_LOADER"], config["VAL_LOADER"]
+    logger.debug("- train data loader: {} number of batches | {} number of samples"
+                 .format(len(train_loader), len(train_loader.dataset)))
+    logger.debug("- validation data loader: {} number of batches | {} number of samples"
+                 .format(len(val_loader), len(val_loader.dataset)))
 
     write_model_graph(writer, model=model, data_loader=train_loader, cuda=cuda)
 
