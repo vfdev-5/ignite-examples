@@ -6,7 +6,7 @@ from torch.utils.data import DataLoader, Dataset
 from torch.utils.data.sampler import SubsetRandomSampler
 from torchvision.transforms import Compose
 
-from common.dataset import TransformedDataset, read_image
+from common.dataset import TransformedDataset, read_image, TrainvalFilesDataset
 
 
 def get_trainval_data_loaders(dataset, train_index, val_index,
@@ -73,3 +73,25 @@ def get_trainval_indices(dataset, fold_index=0, n_splits=5, xy_transforms=None, 
         if i == fold_index:
             break
     return train_index, test_index
+
+
+def get_data_loader(dataset_path,
+                    data_transform,
+                    sample_indices=None,
+                    batch_size=16,
+                    num_workers=8, cuda=True):
+    if isinstance(data_transform, (list, tuple)):
+        data_transform = Compose(data_transform)
+
+    dataset = TrainvalFilesDataset(dataset_path)
+
+    if sample_indices is None:
+        sample_indices = np.arange(len(dataset))
+
+    dataset = TransformedDataset(dataset, transforms=read_image, target_transforms=lambda l: l - 1)
+    dataset = TransformedDataset(dataset, transforms=data_transform)
+
+    data_loader = DataLoader(dataset, batch_size=batch_size,
+                             sampler=SubsetRandomSampler(sample_indices),
+                             num_workers=num_workers, pin_memory=cuda)
+    return data_loader
