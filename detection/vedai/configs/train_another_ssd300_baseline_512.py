@@ -58,14 +58,14 @@ TRAIN_LOADER, VAL_LOADER = get_trainval_data_loaders(dataset,
                                                      val_batch_size=BATCH_SIZE,
                                                      num_workers=NUM_WORKERS, pin_memory=True)
 
-N_EPOCHS = 10
+N_EPOCHS = 100
 
 
 CRITERION = SSDLoss(num_classes=MODEL.n_classes)
 
 OPTIM = SGD(
     params=[
-        {"params": MODEL.parameters(), 'lr': 0.01},
+        {"params": MODEL.parameters(), 'lr': 0.001},
         # {"params": MODEL.classifier.parameters(), 'lr': 0.1},
     ])
 
