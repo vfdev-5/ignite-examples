@@ -1,6 +1,6 @@
 # Basic training configuration file
 from pathlib import Path
-from torch.optim import SGD
+from torch.optim import RMSprop
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torchvision.transforms import RandomVerticalFlip, RandomHorizontalFlip, RandomCrop, CenterCrop
 from torchvision.transforms import RandomApply, RandomAffine
@@ -55,16 +55,14 @@ MODEL = FurnitureInceptionResNet299(pretrained='imagenet')
 
 N_EPOCHS = 100
 
-OPTIM = SGD(
+OPTIM = RMSprop(
     params=[
-        {"params": MODEL.stem.parameters(), 'lr': 0.0005},
+        {"params": MODEL.stem.parameters(), 'lr': 0.0001},
         {"params": MODEL.features.parameters(), 'lr': 0.001},
-        {"params": MODEL.classifier.parameters(), 'lr': 0.1},
+        {"params": MODEL.classifier.parameters(), 'lr': 0.01},
     ],
+    eps=1.0,
     momentum=0.9)
-
-
-
 
 REDUCE_LR_ON_PLATEAU = ReduceLROnPlateau(OPTIM, mode='min', factor=0.5, patience=5, threshold=0.05, verbose=True)
 

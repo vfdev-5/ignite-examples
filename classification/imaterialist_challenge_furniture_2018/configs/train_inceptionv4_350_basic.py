@@ -6,7 +6,7 @@ from torchvision.transforms import RandomVerticalFlip, RandomHorizontalFlip, Ran
 from torchvision.transforms import RandomApply, RandomAffine
 from torchvision.transforms import ColorJitter, ToTensor, Normalize
 from common.dataset import get_data_loaders
-from models.inceptionresnetv2 import FurnitureInceptionResNet299
+from models.inceptionv4 import FurnitureInceptionV4_350
 
 SEED = 12345
 DEBUG = True
@@ -51,7 +51,7 @@ TRAIN_LOADER, VAL_LOADER = get_data_loaders(
     cuda=True)
 
 
-MODEL = FurnitureInceptionResNet299(pretrained='imagenet')
+MODEL = FurnitureInceptionV4_350(pretrained='imagenet')
 
 N_EPOCHS = 100
 
