@@ -38,7 +38,7 @@ TEST_LOADER = get_test_data_loader(
     cuda=True)
 
 
-MODEL = (Path(OUTPUT_PATH) / "training_FurnitureNASNetALarge_20180412_2056" /
-         "model_FurnitureNASNetALarge_5_val_loss=0.5785353.pth").as_posix()
+MODEL = (Path(OUTPUT_PATH) / "training_FurnitureNASNetALarge_20180416_2250" /
+         "model_FurnitureNASNetALarge_4_val_loss=0.6525803.pth").as_posix()
 
 N_TTA = 10

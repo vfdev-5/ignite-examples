@@ -1,3 +1,4 @@
 test_dataset_viz
 val_dataset_viz
 output
+notebooks/*_viz
