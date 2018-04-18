@@ -44,5 +44,5 @@ if __name__ == "__main__":
 
     predefined_task = partial(task, output_path=output_path, dim=dim, interpolation=interpolation)
 
-    with Parallel(n_jobs=10) as parallel:
+    with Parallel(n_jobs=15) as parallel:
         parallel(delayed(predefined_task)(f) for f in tqdm(files))

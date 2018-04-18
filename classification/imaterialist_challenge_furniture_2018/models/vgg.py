@@ -95,6 +95,64 @@ class FurnitureVGG16BN224(Module):
         return x
 
 
+class FurnitureVGG16BN224Finetunned(Module):
+
+    def __init__(self, pretrained=True):
+        super(FurnitureVGG16BN224Finetunned, self).__init__()
+        model = vgg16_bn(pretrained=pretrained)
+        self._features = model.features
+        self.classifier = model.classifier
+        self.final_classifier = Sequential(
+            ReLU(True),
+            Dropout(),
+            Linear(1000, 128)
+        )
+
+        # create aliases:
+        # Stem = Block 1
+        self.stem = ModuleList([
+            self._features[0],
+            self._features[1],
+            self._features[3],
+            self._features[4],
+        ])
+        # Features = Blocks 2 - 5
+        self.features = ModuleList([
+            self._features[7],
+            self._features[8],
+            self._features[10],
+            self._features[11],
+
+            self._features[14],
+            self._features[15],
+            self._features[17],
+            self._features[18],
+            self._features[20],
+            self._features[21],
+
+            self._features[24],
+            self._features[25],
+            self._features[27],
+            self._features[28],
+            self._features[30],
+            self._features[31],
+
+            self._features[34],
+            self._features[35],
+            self._features[37],
+            self._features[38],
+            self._features[40],
+            self._features[41],
+        ])
+
+    def forward(self, x):
+        x = self._features(x)
+        x = x.view(x.size(0), -1)
+        x = self.classifier(x)
+        x = self.final_classifier(x)
+        return x
+
+
 class FurnitureVGG16BN256(Module):
 
     def __init__(self, pretrained=True):
