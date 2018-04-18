@@ -12,9 +12,9 @@ SEED = 12345
 DEBUG = True
 
 OUTPUT_PATH = "output"
-DATASET_PATH = Path("/home/fast_storage/imaterialist-challenge-furniture-2018/")
+DATASET_PATH = Path("/home/local_data/imaterialist-challenge-furniture-2018/")
 
-size = 299
+size = 350
 
 TRAIN_TRANSFORMS = [
     RandomApply(
@@ -37,7 +37,7 @@ VAL_TRANSFORMS = [
 ]
 
 
-BATCH_SIZE = 32
+BATCH_SIZE = 24
 NUM_WORKERS = 8
 
 TRAIN_LOADER, VAL_LOADER = get_data_loaders(

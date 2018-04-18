@@ -1,20 +1,20 @@
 # Basic training configuration file
 from pathlib import Path
 from torch.optim import SGD
-from torch.optim.lr_scheduler import ReduceLROnPlateau
+from torch.optim.lr_scheduler import ExponentialLR, ReduceLROnPlateau
 from torchvision.transforms import RandomVerticalFlip, RandomHorizontalFlip, RandomCrop, CenterCrop
 from torchvision.transforms import RandomApply, RandomAffine
 from torchvision.transforms import ColorJitter, ToTensor, Normalize
 from common.dataset import get_data_loaders
-from models.inceptionresnetv2 import FurnitureInceptionResNet299
+from models.dpn import FurnitureDPN131_350
 
 SEED = 12345
 DEBUG = True
 
 OUTPUT_PATH = "output"
-DATASET_PATH = Path("/home/fast_storage/imaterialist-challenge-furniture-2018/")
+DATASET_PATH = Path("/home/local_data/imaterialist-challenge-furniture-2018/")
 
-size = 299
+size = 350
 
 TRAIN_TRANSFORMS = [
     RandomApply(
@@ -37,7 +37,7 @@ VAL_TRANSFORMS = [
 ]
 
 
-BATCH_SIZE = 32
+BATCH_SIZE = 24
 NUM_WORKERS = 8
 
 TRAIN_LOADER, VAL_LOADER = get_data_loaders(
@@ -51,7 +51,7 @@ TRAIN_LOADER, VAL_LOADER = get_data_loaders(
     cuda=True)
 
 
-MODEL = FurnitureInceptionResNet299(pretrained='imagenet')
+MODEL = FurnitureDPN131_350(pretrained='imagenet')
 
 N_EPOCHS = 100
 
@@ -62,6 +62,11 @@ OPTIM = SGD(
         {"params": MODEL.classifier.parameters(), 'lr': 0.1},
     ],
     momentum=0.9)
+
+
+LR_SCHEDULERS = [
+    ExponentialLR(OPTIM, gamma=0.99)
+]
 
 REDUCE_LR_ON_PLATEAU = ReduceLROnPlateau(OPTIM, mode='min', factor=0.5, patience=5, threshold=0.05, verbose=True)
 
