@@ -12,7 +12,7 @@ SEED = 12345
 DEBUG = True
 
 OUTPUT_PATH = "output"
-DATASET_PATH = Path("/home/local_data/imaterialist-challenge-furniture-2018/")
+DATASET_PATH = Path("/home/fast_storage/imaterialist-challenge-furniture-2018/")
 
 size = 350
 
@@ -26,18 +26,18 @@ TRAIN_TRANSFORMS = [
     RandomVerticalFlip(p=0.5),
     ColorJitter(hue=0.1, brightness=0.1),
     ToTensor(),
-    Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+    Normalize(mean=[124 / 255, 117 / 255, 104 / 255], std=[1 / (.0167 * 255)] * 3)
 ]
 VAL_TRANSFORMS = [
     CenterCrop(size=size),
     RandomHorizontalFlip(p=0.5),
     RandomVerticalFlip(p=0.5),
     ToTensor(),
-    Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+    Normalize(mean=[124 / 255, 117 / 255, 104 / 255], std=[1 / (.0167 * 255)] * 3)
 ]
 
 
-BATCH_SIZE = 24
+BATCH_SIZE = 10
 NUM_WORKERS = 8
 
 TRAIN_LOADER, VAL_LOADER = get_data_loaders(

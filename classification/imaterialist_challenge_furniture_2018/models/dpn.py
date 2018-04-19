@@ -11,7 +11,7 @@ class FurnitureDPN131_350(Module):
         in_chs = self.model.classifier.in_channels
         self.model.classifier = Conv2d(in_chs, 128, kernel_size=1, bias=True)
 
-        for m in self.model.last_linear.modules():
+        for m in self.model.classifier.modules():
             if isinstance(m, Conv2d):
                 m.weight.data.normal_(0, 0.01)
                 m.bias.data.zero_()
@@ -25,7 +25,7 @@ class FurnitureDPN131_350(Module):
             self.model.features[4],  # conv2_4, DualPathBlock
         ])
         self.features = ModuleList([self.model.features[i] for i in range(5, len(self.model.features))])
-        self.classifier = self.model.last_linear
+        self.classifier = self.model.classifier
 
     def forward(self, x):
         x = self.model.features(x)

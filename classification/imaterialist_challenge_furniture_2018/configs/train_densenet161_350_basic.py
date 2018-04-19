@@ -6,10 +6,11 @@ from torchvision.transforms import RandomVerticalFlip, RandomHorizontalFlip, Ran
 from torchvision.transforms import RandomApply, RandomAffine
 from torchvision.transforms import ColorJitter, ToTensor, Normalize
 from common.dataset import get_data_loaders
-from models.inceptionv4 import FurnitureInceptionV4_350
+from models.densenet import FurnitureDenseNet161_350
+
 
 SEED = 12345
-DEBUG = True
+DEBUG = False
 
 OUTPUT_PATH = "output"
 DATASET_PATH = Path("/home/fast_storage/imaterialist-challenge-furniture-2018/")
@@ -26,18 +27,18 @@ TRAIN_TRANSFORMS = [
     RandomVerticalFlip(p=0.5),
     ColorJitter(hue=0.1, brightness=0.1),
     ToTensor(),
-    Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+    Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 ]
 VAL_TRANSFORMS = [
     CenterCrop(size=size),
     RandomHorizontalFlip(p=0.5),
     RandomVerticalFlip(p=0.5),
     ToTensor(),
-    Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+    Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 ]
 
 
-BATCH_SIZE = 24
+BATCH_SIZE = 16
 NUM_WORKERS = 8
 
 TRAIN_LOADER, VAL_LOADER = get_data_loaders(
@@ -51,7 +52,7 @@ TRAIN_LOADER, VAL_LOADER = get_data_loaders(
     cuda=True)
 
 
-MODEL = FurnitureInceptionV4_350(pretrained='imagenet')
+MODEL = FurnitureDenseNet161_350(pretrained='imagenet')
 
 N_EPOCHS = 100
 
@@ -62,8 +63,6 @@ OPTIM = SGD(
         {"params": MODEL.classifier.parameters(), 'lr': 0.1},
     ],
     momentum=0.9)
-
-
 
 
 REDUCE_LR_ON_PLATEAU = ReduceLROnPlateau(OPTIM, mode='min', factor=0.5, patience=5, threshold=0.05, verbose=True)
