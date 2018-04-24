@@ -1,11 +1,12 @@
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 
 from PIL import Image
 
 from torch.utils.data import Dataset, DataLoader
-from torch.utils.data.sampler import SubsetRandomSampler
+from torch.utils.data.dataloader import default_collate
 from torchvision.transforms import Compose
 
 
@@ -25,6 +26,23 @@ class TrainvalFilesDataset(Dataset):
         for i, f in enumerate(self.images):
             self.labels[i] = int(Path(f).stem.split('_')[1])
         self.unique_labels = np.unique(self.labels)
+
+    def __len__(self):
+        return self.n
+
+    def __getitem__(self, index):
+        return self.images[index], self.labels[index]
+
+
+class FilesFromCsvDataset(Dataset):
+
+    def __init__(self, csv_filepath):
+        self.csv_filepath = Path(csv_filepath)
+        assert self.csv_filepath.exists(), "CSV filepath '{}' is not found".format(csv_filepath)
+        df = pd.read_csv(self.csv_filepath)
+        self.n = len(df)
+        self.images = df['filepath'].values
+        self.labels = df['label'].values
 
     def __len__(self):
         return self.n
@@ -81,7 +99,9 @@ def get_data_loaders(train_dataset_path,
                      train_data_transform,
                      val_data_transform,
                      train_batch_size, val_batch_size,
-                     num_workers, cuda=True):
+                     num_workers,
+                     cuda=True,
+                     collate_fn=default_collate):
     if isinstance(train_data_transform, (list, tuple)):
         train_data_transform = Compose(train_data_transform)
 
@@ -103,9 +123,10 @@ def get_data_loaders(train_dataset_path,
 
     train_loader = DataLoader(train_dataset, batch_size=train_batch_size,
                               shuffle=True,
-                              # sampler=SubsetRandomSampler(train_indices),
+                              collate_fn=collate_fn,
                               num_workers=num_workers, pin_memory=cuda)
     val_loader = DataLoader(val_dataset, batch_size=val_batch_size, shuffle=True,
+                            collate_fn=collate_fn,
                             num_workers=num_workers, pin_memory=cuda)
 
     return train_loader, val_loader
