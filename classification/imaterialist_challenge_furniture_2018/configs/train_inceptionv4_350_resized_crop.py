@@ -2,12 +2,12 @@
 from pathlib import Path
 from torch.optim import SGD
 from torch.optim.lr_scheduler import ReduceLROnPlateau
-from torchvision.transforms import RandomHorizontalFlip, CenterCrop
-from torchvision.transforms import RandomApply, RandomResizedCrop
+from torchvision.transforms import RandomHorizontalFlip, RandomVerticalFlip
+from torchvision.transforms import RandomResizedCrop
 from torchvision.transforms import ColorJitter, ToTensor, Normalize
 from common.dataset import FilesFromCsvDataset
 from common.data_loaders import get_data_loader
-from models.squeezenet_350 import FurnitureSqueezeNet350
+from models.inceptionv4 import FurnitureInceptionV4_350
 
 SEED = 12345
 DEBUG = True
@@ -15,28 +15,31 @@ DEBUG = True
 OUTPUT_PATH = "output"
 DATASET_PATH = Path("/home/fast_storage/imaterialist-challenge-furniture-2018/")
 
+size = 350
 
 TRAIN_TRANSFORMS = [
-    RandomResizedCrop(350, scale=(0.7, 1.0)),
+    RandomResizedCrop(350, scale=(0.6, 1.0), interpolation=3),
+    RandomVerticalFlip(p=0.5),
     RandomHorizontalFlip(p=0.5),
-    ColorJitter(hue=0.1, brightness=0.2, contrast=0.2),
+    ColorJitter(hue=0.12, brightness=0.12),
     ToTensor(),
-    Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+    Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
 ]
 
 VAL_TRANSFORMS = [
-    RandomResizedCrop(350, scale=(0.8, 1.0)),
+    RandomResizedCrop(350, scale=(0.7, 1.0), interpolation=3),
     RandomHorizontalFlip(p=0.5),
     ToTensor(),
-    Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+    Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
 ]
 
 
-BATCH_SIZE = 128
+BATCH_SIZE = 24
 NUM_WORKERS = 15
 
 
 dataset = FilesFromCsvDataset("output/filtered_train_dataset.csv")
+
 TRAIN_LOADER = get_data_loader(dataset,
                                data_transform=TRAIN_TRANSFORMS,
                                batch_size=BATCH_SIZE,
@@ -50,24 +53,24 @@ VAL_LOADER = get_data_loader(val_dataset,
                              num_workers=NUM_WORKERS,
                              cuda=True)
 
-MODEL = FurnitureSqueezeNet350(pretrained=True)
+
+MODEL = FurnitureInceptionV4_350(pretrained='imagenet')
 
 N_EPOCHS = 100
 
 OPTIM = SGD(
     params=[
-        {"params": MODEL.features.parameters(), 'lr': 0.01},
+        {"params": MODEL.stem.parameters(), 'lr': 0.0005},
+        {"params": MODEL.features.parameters(), 'lr': 0.001},
         {"params": MODEL.classifier.parameters(), 'lr': 0.1},
-    ])
+    ],
+    momentum=0.9)
 
-# LR_SCHEDULERS = [
-#     MultiStepLR(OPTIM, milestones=[55, 70, 80, 90, 100], gamma=0.5)
-# ]
 
-REDUCE_LR_ON_PLATEAU = ReduceLROnPlateau(OPTIM, mode='min', factor=0.5, patience=5, threshold=0.05, verbose=True)
+REDUCE_LR_ON_PLATEAU = ReduceLROnPlateau(OPTIM, mode='min', factor=0.5, patience=3, threshold=0.08, verbose=True)
 
 EARLY_STOPPING_KWARGS = {
-    'patience': 30,
+    'patience': 15,
     # 'score_function': None
 }
 
