@@ -36,9 +36,32 @@ Edit a configuration file, for example `predict_vgg16_bn_basic.py` and simply ru
 ```bash
 python predict.py configs/your_config.py
 ```
-
  
+## Simple blending
 
+Dataset is splitted already on two splits: train and validation. 
+Complete procedure is the following:
 
+- Fit and predict with networks:
+    - Fit network 1 on the train dataset
+    - Predict probabilites with the network 1 on the validation and test datasets
+    - Fit network 2 on the train dataset
+    - Predict probabilites with the network 2 on the validation and test dataset
+    
+    ...
+    
+    - Fit network `n` on the train dataset
+    - Predict probabilites with the network `n` on the validation and test dataset
 
+- Create probabilites dataset composed of predictions on the validation dataset
+    - Concatenate predictions of single networks 
+
+- Create probabilites dataset composed of predictions on the test dataset
+    - Concatenate predictions of single networks 
+
+- Fit a meta-model on the validation probabilites dataset 
+    - Use cross-validation to estimate the performance and tune hyperparameters        
+    - Finally, train on the whole dataset 
+
+- Predict classes with trained meta-model on the test probabilites dataset
 
