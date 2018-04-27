@@ -59,8 +59,8 @@ N_EPOCHS = 100
 
 OPTIM = Adam(
     params=[
-        {"params": MODEL.stem.parameters(), 'lr': 0.00001},
-        {"params": MODEL.features.parameters(), 'lr': 0.0002},
+        {"params": MODEL.stem.parameters(), 'lr': 0.00005},
+        {"params": MODEL.features.parameters(), 'lr': 0.0001},
         {"params": MODEL.classifier.parameters(), 'lr': 0.001},
     ],
 )

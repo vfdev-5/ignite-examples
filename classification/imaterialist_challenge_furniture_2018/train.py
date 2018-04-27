@@ -79,7 +79,7 @@ def load_config(config_filepath):
     spec.loader.exec_module(custom_module)
     config = custom_module.__dict__
     assert "TRAIN_LOADER" in config, "TRAIN_LOADER parameter is not found in configuration file"
-    assert "VAL_LOADER" in config, "VAL_LOADER parameter is not found in configuration file"
+    assert "VAL_LOADER" in config, "TRAIN_LOADER parameter is not found in configuration file"
 
     assert "OUTPUT_PATH" in config, "OUTPUT_PATH is not found in the configuration file"
 
@@ -95,6 +95,11 @@ def load_config(config_filepath):
         config["OPTIM"] = SGD(config["MODEL"].parameters(), lr=0.1, momentum=0.9, nesterov=True)
     assert isinstance(config["OPTIM"], torch.optim.Optimizer), \
         "Optimizer should be an instance of torch.optim.Optimizer, but given {}".format(type(config["OPTIM"]))
+    
+    if "CRITERION" not in config:
+        config["CRITERION"] = nn.CrossEntropyLoss()
+    assert isinstance(config["CRITERION"], nn.Module), \
+        "Criterion should be torch.nn.Module, but given {}".format(type(config["CRITERION"]))
 
     if "LR_SCHEDULERS" in config:
         assert isinstance(config["LR_SCHEDULERS"], (tuple, list))
@@ -163,7 +168,7 @@ def run(config_file):
     optimizer = config["OPTIM"]
 
     logger.debug("Setup criterion")
-    criterion = nn.CrossEntropyLoss()
+    criterion = config["CRITERION"]
     if cuda:
         criterion = criterion.cuda()
 
@@ -186,7 +191,7 @@ def run(config_file):
     evaluator = create_supervised_evaluator(model,
                                             metrics={
                                                 'accuracy': CategoricalAccuracy(),
-                                                'nll': Loss(criterion),
+                                                'nll': Loss(nn.CrossEntropyLoss()),
                                                 'precision': Precision(),
                                                 'recall': Recall(),
                                             },
