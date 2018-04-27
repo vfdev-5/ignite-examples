@@ -53,6 +53,12 @@ class FurnitureNASNetALarge(Module):
         return x
 
 
+class FurnitureNASNetALarge350(FurnitureNASNetALarge):
+
+    def __init__(self, pretrained):
+        super(FurnitureNASNetALarge350, self).__init__(pretrained)
+
+
 class FurnitureNASNetALargeFinetunned(Module):
 
     def __init__(self, pretrained):

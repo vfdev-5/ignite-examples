@@ -79,7 +79,7 @@ def load_config(config_filepath):
     spec.loader.exec_module(custom_module)
     config = custom_module.__dict__
     assert "TRAIN_LOADER" in config, "TRAIN_LOADER parameter is not found in configuration file"
-    assert "VAL_LOADER" in config, "TRAIN_LOADER parameter is not found in configuration file"
+    assert "VAL_LOADER" in config, "VAL_LOADER parameter is not found in configuration file"
 
     assert "OUTPUT_PATH" in config, "OUTPUT_PATH is not found in the configuration file"
 
