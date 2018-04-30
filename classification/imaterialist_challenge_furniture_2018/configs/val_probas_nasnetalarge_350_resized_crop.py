@@ -11,7 +11,9 @@ DEBUG = True
 
 OUTPUT_PATH = "output"
 dataset_path = Path("/home/fast_storage/imaterialist-challenge-furniture-2018/")
-SAMPLE_SUBMISSION_PATH = dataset_path / "sample_submission_randomlabel.csv"
+
+SAVE_PROBAS = True
+# SAMPLE_SUBMISSION_PATH = dataset_path / "sample_submission_randomlabel.csv"
 
 
 TEST_TRANSFORMS = [
@@ -23,18 +25,18 @@ TEST_TRANSFORMS = [
 ]
 
 N_CLASSES = 128
-BATCH_SIZE = 24
+BATCH_SIZE = 8
 NUM_WORKERS = 15
 
 TEST_LOADER = get_test_data_loader(
-    dataset_path=dataset_path / "test",
+    dataset_path=dataset_path / "validation",
     test_data_transform=TEST_TRANSFORMS,
     batch_size=BATCH_SIZE,
     num_workers=NUM_WORKERS,
     cuda=True)
 
 
-MODEL = (Path(OUTPUT_PATH) / "training_FurnitureInceptionV4_350_20180427_1512" /
-         "model_FurnitureInceptionV4_350_13_val_loss=0.5497886.pth").as_posix()
+MODEL = (Path(OUTPUT_PATH) / "training_FurnitureNASNetALarge350_20180426_0833" /
+         "model_FurnitureNASNetALarge350_6_val_loss=0.5039662.pth").as_posix()
 
 N_TTA = 12

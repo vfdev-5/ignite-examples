@@ -25,9 +25,12 @@ def load_config(config_filepath):
     custom_module = util.module_from_spec(spec)
     spec.loader.exec_module(custom_module)
     config = custom_module.__dict__
-    assert "META_FEATURES_LIST" in config, "META_FEATURES_LIST parameter is not found in configuration file"
 
-    assert "TRAIN_DATASET" in config, "TRAIN_DATASET parameter is not found in configuration file"
+    assert "X" in config, "X parameter is not found in configuration file"
+    assert isinstance(config["X"], np.ndarray), "X should be a numpy.ndarray"
+    assert "Y" in config, "Y parameter is not found in configuration file"
+    assert isinstance(config["Y"], np.ndarray), "X should be a numpy.ndarray"
+    assert len(config["X"]) == len(config["Y"])
 
     assert "OUTPUT_PATH" in config, "OUTPUT_PATH is not found in the configuration file"
 
@@ -52,16 +55,6 @@ def load_config(config_filepath):
         config["N_JOBS"] = 1
 
     return config
-
-
-import pandas as pd
-
-
-def get_metafeatures(prediction_files):
-    dfs = [pd.read_csv(f, index_col='id') for f in prediction_files]
-    names = ["f{}".format(i) for i in range(len(prediction_files))]
-    meta_features = pd.concat([df for df in dfs], axis=1, names=names)
-    return meta_features
 
 
 def hp_optimize(score_fn, params_space, max_evals):
@@ -101,8 +94,8 @@ def run(config_file):
 
     save_conf(config_file, log_dir.as_posix(), logger)
 
-    X = None
-    y = None
+    X = config["X"]
+    y = config["Y"]
 
     n_trials = config["N_TRIALS"]
     scorings = config["SCORINGS"]
@@ -143,6 +136,7 @@ def run(config_file):
 
         logger.info("Train meta model on complete dataset")
         estimator = estimator_cls(**best_params)
+        estimator.fit(X, y)
 
         save_model(estimator, (log_dir / "best_model.pkl").as_posix())
 

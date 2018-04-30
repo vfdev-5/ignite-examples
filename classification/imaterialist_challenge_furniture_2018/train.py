@@ -4,6 +4,8 @@ from argparse import ArgumentParser
 import random
 import logging
 from importlib import util
+import shutil
+
 
 import numpy as np
 from PIL import Image
@@ -131,10 +133,12 @@ def run(config_file):
 
     from datetime import datetime
     now = datetime.now()
-    log_dir = output / ("training_{}_{}".format(model_name, now.strftime("%Y%m%d_%H%M")))
+    log_dir = output / ("{}".format(Path(config_file).stem)) / "{}".format(now.strftime("%Y%m%d_%H%M"))
     assert not log_dir.exists(), \
         "Output logging directory '{}' already existing".format(log_dir)
     log_dir.mkdir(parents=True)
+
+    shutil.copyfile(config_file, (log_dir / Path(config_file).name).as_posix())
 
     log_level = logging.INFO
     if debug:
@@ -322,7 +326,7 @@ def run(config_file):
     evaluator.add_event_handler(Events.COMPLETED, last_model_saver, {model_name: model})
 
     n_epochs = config["N_EPOCHS"]
-    logger.debug("Start training: {} epochs".format(n_epochs))
+    logger.info("Start training: {} epochs".format(n_epochs))
     try:
         trainer.run(train_loader, max_epochs=n_epochs)
     except KeyboardInterrupt:

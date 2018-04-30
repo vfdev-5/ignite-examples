@@ -4,9 +4,8 @@ from PIL import Image
 
 import pandas as pd
 
-import catboost as cat
-
 from sklearn.model_selection import StratifiedKFold
+from sklearn.linear_model import LogisticRegression
 
 from common.dataset import FilesFromCsvDataset, TransformedDataset
 from common.meta import get_metafeatures, get_imsize_and_targets
@@ -40,9 +39,9 @@ Y = df_imsize_targets['target'].values
 # Cross-validation parameters
 CV_SPLIT = StratifiedKFold(n_splits=5, shuffle=True, random_state=SEED)
 
-MODEL = cat.CatBoostClassifier
+MODEL = LogisticRegression
 
-SCORINGS = ["neg_log_loss", ]
+SCORINGS = ["neg_log_loss", "precision_macro", "recall_macro"]
 
 FIT_PARAMS = {
 
@@ -65,7 +64,7 @@ MODEL_HP_PARAMS = {
     "depth": 2 + hp.randint("depth", 5),
     "learning_rate": hp.quniform("learning_rate", 0.001, 0.5, 0.005),
     "l2_leaf_reg": 2 + hp.randint("l2_leaf_reg", 2),
-    "random_seed": hp.randint("random_seed", 12345),
+    "random_seed": hp.randint("seed", 12345),
     "subsample": hp.quniform("subsample", 0.5, 1.0, 0.01)
 }
 

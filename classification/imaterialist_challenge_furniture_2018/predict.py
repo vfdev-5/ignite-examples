@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 
 import torch
+from torch.nn import functional as F
 from torch.nn import Module
 
 try:
@@ -35,6 +36,7 @@ def create_inferencer(model, cuda=True):
     def _update(engine, batch):
         x, indices = _prepare_batch(batch)
         y_pred = model(x)
+        y_pred = F.softmax(y_pred, dim=1)
         return {
             "y_pred": to_tensor(y_pred, cpu=True),
             "indices": indices
@@ -55,9 +57,13 @@ def load_config(config_filepath):
     assert "TEST_LOADER" in config, "TEST_LOADER parameter is not found in configuration file"
     assert "OUTPUT_PATH" in config, "OUTPUT_PATH is not found in the configuration file"
     assert "N_CLASSES" in config, "N_CLASSES is not found in the configuration file"
-    assert "SAMPLE_SUBMISSION_PATH" in config, "SAMPLE_SUBMISSION_PATH is not found in the configuration file"
-    assert Path(config["SAMPLE_SUBMISSION_PATH"]).exists(), \
-        "File '{}' is not found".format(config["SAMPLE_SUBMISSION_PATH"])
+
+    if "SAVE_PROBAS" not in config:
+        config["SAVE_PROBAS"] = False
+    if not config["SAVE_PROBAS"]:
+        assert "SAMPLE_SUBMISSION_PATH" in config, "SAMPLE_SUBMISSION_PATH is not found in the configuration file"
+        assert Path(config["SAMPLE_SUBMISSION_PATH"]).exists(), \
+            "File '{}' is not found".format(config["SAMPLE_SUBMISSION_PATH"])
 
     if "N_TTA" not in config:
         config["N_TTA"] = 5
@@ -78,6 +84,14 @@ def write_submission(indices, y_preds, sample_submission_path, submission_filepa
     df.to_csv(submission_filepath)
 
 
+def write_probas(indices, y_probas, output_filepath):
+    n_samples, n_classes = y_probas.shape
+    cols = ["c{}".format(i) for i in range(n_classes)]
+    df = pd.DataFrame(columns=cols, index=indices)
+    df.loc[:, :] = y_probas
+    df.to_csv(output_filepath, index_label="id")
+
+
 def run(config_file):
 
     print("--- iMaterialist 2018 : Inference --- ")
@@ -89,16 +103,15 @@ def run(config_file):
     random.seed(seed)
     torch.manual_seed(seed)
 
-    sample_submission_path = config["SAMPLE_SUBMISSION_PATH"]
-
     output = Path(config["OUTPUT_PATH"])
     model = config["MODEL"]
-    model_name = model.__class__.__name__
+    # model_name = model.__class__.__name__
     debug = config.get("DEBUG", False)
 
     from datetime import datetime
     now = datetime.now()
-    log_dir = output / "inference_{}_{}".format(model_name, now.strftime("%Y%m%d_%H%M"))
+    # log_dir = output / "inference_{}_{}".format(model_name, now.strftime("%Y%m%d_%H%M"))
+    log_dir = output / ("{}".format(Path(config_file).stem)) / "{}".format(now.strftime("%Y%m%d_%H%M"))
     assert not log_dir.exists(), \
         "Output logging directory '{}' already existing".format(log_dir)
     log_dir.mkdir(parents=True)
@@ -160,11 +173,12 @@ def run(config_file):
         if tta_index == 0:
             indices[start_index:end_index] = output['indices']
 
-    logger.debug("Start inference")
+    logger.info("Start inference")
     try:
         inferencer.run(test_loader, max_epochs=n_tta)
     except KeyboardInterrupt:
         logger.info("Catched KeyboardInterrupt -> exit")
+        return
     except Exception as e:  # noqa
         logger.exception("")
         if debug:
@@ -174,14 +188,21 @@ def run(config_file):
                 IPython.embed()  # noqa
             except ImportError:
                 print("Failed to start IPython console")
+        return
 
     # Average probabilities:
     y_probas = np.mean(y_probas_tta, axis=-1)
-    y_preds = np.argmax(y_probas, axis=-1) + 1  # as labels are one-based
 
-    logger.info("Write submission file")
-    submission_filepath = log_dir / "predictions.csv"
-    write_submission(indices, y_preds, sample_submission_path, submission_filepath)
+    if config["SAVE_PROBAS"]:
+        logger.info("Write probabilities file")
+        probas_filepath = log_dir / "probas.csv"
+        write_probas(indices, y_probas, probas_filepath)
+    else:
+        y_preds = np.argmax(y_probas, axis=-1) + 1  # as labels are one-based
+        logger.info("Write submission file")
+        submission_filepath = log_dir / "predictions.csv"
+        sample_submission_path = config["SAMPLE_SUBMISSION_PATH"]
+        write_submission(indices, y_preds, sample_submission_path, submission_filepath)
 
 
 if __name__ == "__main__":

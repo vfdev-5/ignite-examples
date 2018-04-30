@@ -11,7 +11,9 @@ DEBUG = True
 
 OUTPUT_PATH = "output"
 dataset_path = Path("/home/fast_storage/imaterialist-challenge-furniture-2018/")
-SAMPLE_SUBMISSION_PATH = dataset_path / "sample_submission_randomlabel.csv"
+
+SAVE_PROBAS = True
+# SAMPLE_SUBMISSION_PATH = dataset_path / "sample_submission_randomlabel.csv"
 
 
 TEST_TRANSFORMS = [
@@ -34,7 +36,7 @@ TEST_LOADER = get_test_data_loader(
     cuda=True)
 
 
-MODEL = (Path(OUTPUT_PATH) / "training_FurnitureInceptionV4_350_20180427_1512" /
-         "model_FurnitureInceptionV4_350_13_val_loss=0.5497886.pth").as_posix()
+MODEL = (Path(OUTPUT_PATH) / "training_FurnitureInceptionResNet299_20180425_2324" /
+         "model_FurnitureInceptionResNet299_10_val_loss=0.5324794.pth").as_posix()
 
 N_TTA = 12

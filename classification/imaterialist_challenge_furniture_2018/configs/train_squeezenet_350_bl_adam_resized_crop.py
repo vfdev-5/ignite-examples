@@ -8,6 +8,8 @@ from torchvision.transforms import ColorJitter, ToTensor, Normalize
 from common.dataset import FilesFromCsvDataset
 from common.data_loaders import get_data_loader
 from models.squeezenet_350 import FurnitureSqueezeNet350
+from common.boostrapping_loss import HardBootstrappingLoss
+
 
 SEED = 12345
 DEBUG = True
@@ -49,6 +51,8 @@ VAL_LOADER = get_data_loader(val_dataset,
                              batch_size=BATCH_SIZE,
                              num_workers=NUM_WORKERS,
                              cuda=True)
+
+CRITERION = HardBootstrappingLoss(beta=0.8)
 
 MODEL = FurnitureSqueezeNet350(pretrained=True)
 

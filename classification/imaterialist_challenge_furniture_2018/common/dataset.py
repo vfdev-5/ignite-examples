@@ -58,13 +58,28 @@ class TestFilesDataset(Dataset):
         assert path.exists(), "Test dataset is not found at '{}'".format(path)
         files = path.glob("*.png")
         self.images = [f for f in files]
+        if "_" in self.images[0].stem:
+            self.image_ids = [self.train_filepath_to_image_id(f) for f in self.images]
+        else:
+            self.image_ids = [self.test_filepath_to_image_id(f) for f in self.images]
         self.n = len(self.images)
 
     def __len__(self):
         return self.n
 
     def __getitem__(self, index):
-        return self.images[index].as_posix(), int(self.images[index].stem)
+        return self.images[index].as_posix(), self.image_ids[index]
+
+    @staticmethod
+    def train_filepath_to_image_id(filepath):
+        stem = filepath.stem
+        split = stem.split("_")
+        return int(split[0])
+
+    @staticmethod
+    def test_filepath_to_image_id(filepath):
+        stem = filepath.stem
+        return int(stem)
 
 
 def read_image(fp):
@@ -108,10 +123,7 @@ def get_data_loaders(train_dataset_path,
     if isinstance(val_data_transform, (list, tuple)):
         val_data_transform = Compose(val_data_transform)
 
-    corrupted_files = [
-        # (Path(train_dataset_path) / "124682_20.png").as_posix(),
-    ]
-    train_dataset = TrainvalFilesDataset(train_dataset_path, corrupted_files=corrupted_files)
+    train_dataset = TrainvalFilesDataset(train_dataset_path)
     val_dataset = TrainvalFilesDataset(val_dataset_path)
 
     train_dataset = TransformedDataset(train_dataset, transforms=read_image,

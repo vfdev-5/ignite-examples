@@ -11,7 +11,9 @@ DEBUG = True
 
 OUTPUT_PATH = "output"
 dataset_path = Path("/home/fast_storage/imaterialist-challenge-furniture-2018/")
-SAMPLE_SUBMISSION_PATH = dataset_path / "sample_submission_randomlabel.csv"
+
+SAVE_PROBAS = True
+# SAMPLE_SUBMISSION_PATH = dataset_path / "sample_submission_randomlabel.csv"
 
 
 TEST_TRANSFORMS = [
