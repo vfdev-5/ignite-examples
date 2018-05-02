@@ -39,7 +39,8 @@ def load_config(config_filepath):
     config = custom_module.__dict__
     assert "DATA_LOADER" in config, "DATA_LOADER parameter is not found in configuration file"
     assert "OUTPUT_PATH" in config, "OUTPUT_PATH is not found in the configuration file"
-    assert "N_EPOCHS" in config, "Number of epochs N_EPOCHS should be specified in the configuration file"
+    assert "N_EPOCHS" not in config, "Number of epochs N_EPOCHS should not be specified in the configuration file"
+    config["N_EPOCHS"] = 1
     assert "N_CLASSES" in config, "Number of classes N_CLASSES should be specified in the configuration file"
     return config
 

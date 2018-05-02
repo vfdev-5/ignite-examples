@@ -92,7 +92,7 @@ def get_data_loader(dataset_or_path,
         (isinstance(dataset_or_path, (str, Path)) and Path(dataset_or_path).exists()), \
         "Dataset or path should be either Dataset or path to images, but given {}".format(dataset_or_path)
 
-    assert sample_indices or sampler, "Both are not possible"
+    assert sample_indices is None or sampler is None, "Both are not possible"
 
     if data_transform is not None and isinstance(data_transform, (list, tuple)):
         data_transform = Compose(data_transform)
@@ -102,7 +102,7 @@ def get_data_loader(dataset_or_path,
     else:
         dataset = dataset_or_path
 
-    if sample_indices is None:
+    if sample_indices is None and sampler is None:
         sample_indices = np.arange(len(dataset))
 
     if sample_indices is not None:

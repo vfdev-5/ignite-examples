@@ -1,14 +1,14 @@
 # Basic training configuration file
 from pathlib import Path
-from torch.optim import Adam
-from torch.optim.lr_scheduler import ReduceLROnPlateau, MultiStepLR
+from torch.optim import SGD
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torchvision.transforms import RandomHorizontalFlip, RandomVerticalFlip
 from torchvision.transforms import RandomResizedCrop
 from torchvision.transforms import ColorJitter, ToTensor, Normalize
 from common.dataset import FilesFromCsvDataset
 from common.data_loaders import get_data_loader
-from models.inceptionresnetv2 import FurnitureInceptionResNet299
-from common.boostrapping_loss import SoftBootstrappingLoss
+from common.sampling import SmartWeightedRandomSampler
+from models.inceptionv4 import FurnitureInceptionV4_350
 
 
 SEED = 12345
@@ -41,9 +41,11 @@ NUM_WORKERS = 15
 
 
 dataset = FilesFromCsvDataset("output/filtered_train_dataset.csv")
+train_sampler = SmartWeightedRandomSampler(dataset)
 TRAIN_LOADER = get_data_loader(dataset,
                                data_transform=TRAIN_TRANSFORMS,
                                batch_size=BATCH_SIZE,
+                               sampler=train_sampler,
                                num_workers=NUM_WORKERS,
                                cuda=True)
 
@@ -54,24 +56,18 @@ VAL_LOADER = get_data_loader(val_dataset,
                              num_workers=NUM_WORKERS,
                              cuda=True)
 
-CRITERION = SoftBootstrappingLoss(beta=0.95)
 
-MODEL = FurnitureInceptionResNet299(pretrained='imagenet')
+MODEL = FurnitureInceptionV4_350(pretrained='imagenet')
 
 N_EPOCHS = 100
 
-OPTIM = Adam(
+OPTIM = SGD(
     params=[
-        {"params": MODEL.stem.parameters(), 'lr': 0.00005},
-        {"params": MODEL.features.parameters(), 'lr': 0.0001},
-        {"params": MODEL.classifier.parameters(), 'lr': 0.001},
+        {"params": MODEL.stem.parameters(), 'lr': 0.0005},
+        {"params": MODEL.features.parameters(), 'lr': 0.001},
+        {"params": MODEL.classifier.parameters(), 'lr': 0.1},
     ],
-)
-
-
-LR_SCHEDULERS = [
-    MultiStepLR(OPTIM, milestones=[4, 5, 6, 8, 10, 12], gamma=0.2)
-]
+    momentum=0.9)
 
 
 REDUCE_LR_ON_PLATEAU = ReduceLROnPlateau(OPTIM, mode='min', factor=0.5, patience=3, threshold=0.08, verbose=True)
@@ -82,3 +78,11 @@ EARLY_STOPPING_KWARGS = {
 }
 
 LOG_INTERVAL = 100
+
+TRAINER_CUSTOM_EVENT_HANDLERS = [
+
+]
+
+EVALUATOR_CUSTOM_EVENT_HANDLERS = [
+    
+]

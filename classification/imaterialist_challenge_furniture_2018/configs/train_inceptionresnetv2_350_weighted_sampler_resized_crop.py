@@ -1,5 +1,7 @@
 # Basic training configuration file
 from pathlib import Path
+import numpy as np
+import torch
 from torch.optim import SGD
 from torch.optim.lr_scheduler import ReduceLROnPlateau, MultiStepLR
 from torchvision.transforms import RandomHorizontalFlip, RandomVerticalFlip
@@ -41,7 +43,7 @@ NUM_WORKERS = 15
 
 
 lowest_recall_classes_weight = np.array([
-    (3, 5.0), (14, 10.0), (18, 5.0), (26, 5.0), (38, 5.0), (49, 5.0), (62, 10.0), (65, 10.0), (104, 5.0), (123, 5.0)
+    (3, 7.0), (14, 12.0), (18, 5.0), (26, 5.0), (38, 5.0), (49, 5.0), (62, 10.0), (65, 10.0), (104, 5.0), (123, 5.0)
 ])
 
 dataset = FilesFromCsvDataset("output/filtered_train_dataset.csv")
@@ -61,25 +63,28 @@ VAL_LOADER = get_data_loader(val_dataset,
                              cuda=True)
 
 
-MODEL = FurnitureInceptionResNet299(pretrained='imagenet')
+# MODEL = FurnitureInceptionResNet299(pretrained='imagenet')
+model_checkpoint = (Path(OUTPUT_PATH) / "train_inceptionresnetv2_350_weighted_sampler_resized_crop" /
+                    "20180430_1539" /
+                    "model_FurnitureInceptionResNet299_9_val_loss=0.6405021.pth").as_posix()
+MODEL = torch.load(model_checkpoint)
 
 N_EPOCHS = 100
 
 OPTIM = SGD(
     params=[
-        {"params": MODEL.stem.parameters(), 'lr': 0.0001},
-        {"params": MODEL.features.parameters(), 'lr': 0.002},
-        {"params": MODEL.classifier.parameters(), 'lr': 0.1},
+        {"params": MODEL.stem.parameters(), 'lr': 0.00009},
+        {"params": MODEL.features.parameters(), 'lr': 0.0019},
+        {"params": MODEL.classifier.parameters(), 'lr': 0.09},
     ],
     momentum=0.9)
 
 
 LR_SCHEDULERS = [
-    MultiStepLR(OPTIM, milestones=[8, 10, 12, 14, 16], gamma=0.3)
+    MultiStepLR(OPTIM, milestones=[1, 4, 8, 12, 16], gamma=0.5)
 ]
 
-
-REDUCE_LR_ON_PLATEAU = ReduceLROnPlateau(OPTIM, mode='min', factor=0.5, patience=3, threshold=0.08, verbose=True)
+# REDUCE_LR_ON_PLATEAU = ReduceLROnPlateau(OPTIM, mode='min', factor=0.5, patience=3, threshold=0.08, verbose=True)
 
 EARLY_STOPPING_KWARGS = {
     'patience': 15,

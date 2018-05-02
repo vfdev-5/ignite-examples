@@ -1,5 +1,6 @@
 import numpy as np
 
+import torch
 from torch.utils.data.sampler import WeightedRandomSampler
 
 from imblearn.under_sampling import RandomUnderSampler
@@ -38,3 +39,27 @@ def get_weighted_train_sampler(dataset, classes_weight, n_samples=25000):
         weights[indices] = w
     sampler = WeightedRandomSampler(weights, num_samples=n_samples)
     return sampler
+
+
+class SmartWeightedRandomSampler(WeightedRandomSampler):
+
+    def __init__(self, targets, num_samples=None):
+        weights = np.ones((len(targets),))
+
+        if num_samples is None:
+            num_samples = len(targets)
+
+        self.weights_indices_per_class = {}
+        unique_classes = np.unique(targets)
+        for c in unique_classes:
+            self.weights_indices_per_class[c] = np.where(targets == int(c))[0].tolist()
+
+        super(SmartWeightedRandomSampler, self).__init__(weights, num_samples, replacement=True)
+
+    def update_weights(self, class_weights):
+        for c, w in class_weights:
+            indices = self.weights_indices_per_class[c]
+            self.weights[indices] = w
+
+    def reset_weights(self):
+        self.weights = torch.ones_like(self.weights)
