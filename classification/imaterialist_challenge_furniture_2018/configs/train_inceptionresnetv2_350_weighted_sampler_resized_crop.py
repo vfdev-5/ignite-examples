@@ -69,7 +69,6 @@ model_checkpoint = (Path(OUTPUT_PATH) / "train_inceptionresnetv2_350_weighted_sa
                     "model_FurnitureInceptionResNet299_9_val_loss=0.6405021.pth").as_posix()
 MODEL = torch.load(model_checkpoint)
 
-
 N_EPOCHS = 100
 
 OPTIM = SGD(

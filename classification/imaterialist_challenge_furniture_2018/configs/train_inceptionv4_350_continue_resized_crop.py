@@ -40,7 +40,6 @@ NUM_WORKERS = 15
 
 
 dataset = FilesFromCsvDataset("output/filtered_train_dataset.csv")
-
 TRAIN_LOADER = get_data_loader(dataset,
                                data_transform=TRAIN_TRANSFORMS,
                                batch_size=BATCH_SIZE,

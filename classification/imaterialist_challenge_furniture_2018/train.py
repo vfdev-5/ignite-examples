@@ -113,6 +113,12 @@ def load_config(config_filepath):
     if "REDUCE_LR_ON_PLATEAU" in config:
         assert isinstance(config["REDUCE_LR_ON_PLATEAU"], ReduceLROnPlateau)
 
+    if "TRAINER_CUSTOM_EVENT_HANDLERS" not in config:
+        config["TRAINER_CUSTOM_EVENT_HANDLERS"] = []
+
+    if "EVALUATOR_CUSTOM_EVENT_HANDLERS" not in config:
+        config["EVALUATOR_CUSTOM_EVENT_HANDLERS"] = []
+
     return config
 
 
@@ -324,6 +330,13 @@ def run(config_file):
                                        atomic=True,
                                        create_dir=True)
     evaluator.add_event_handler(Events.COMPLETED, last_model_saver, {model_name: model})
+
+    # Setup custom event handlers:
+    for (event, handler) in config["TRAINER_CUSTOM_EVENT_HANDLERS"]:
+        trainer.add_event_handler(event, handler, evaluator, logger)
+
+    for (event, handler) in config["EVALUATOR_CUSTOM_EVENT_HANDLERS"]:
+        evaluator.add_event_handler(event, handler, trainer, logger)
 
     n_epochs = config["N_EPOCHS"]
     logger.info("Start training: {} epochs".format(n_epochs))
