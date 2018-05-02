@@ -1,13 +1,14 @@
 # Basic training configuration file
-import torch
 from pathlib import Path
 from torch.optim import SGD
-from torch.optim.lr_scheduler import ReduceLROnPlateau, ExponentialLR
+from torch.optim.lr_scheduler import ReduceLROnPlateau, MultiStepLR
 from torchvision.transforms import RandomHorizontalFlip, RandomVerticalFlip
 from torchvision.transforms import RandomResizedCrop
 from torchvision.transforms import ColorJitter, ToTensor, Normalize
 from common.dataset import FilesFromCsvDataset
 from common.data_loaders import get_data_loader
+from common.sampling import get_weighted_train_sampler
+from models.inceptionresnetv2 import FurnitureInceptionResNet299
 
 
 SEED = 12345
@@ -39,9 +40,15 @@ BATCH_SIZE = 24
 NUM_WORKERS = 15
 
 
+lowest_recall_classes_weight = np.array([
+    (3, 5.0), (14, 10.0), (18, 5.0), (26, 5.0), (38, 5.0), (49, 5.0), (62, 10.0), (65, 10.0), (104, 5.0), (123, 5.0)
+])
+
 dataset = FilesFromCsvDataset("output/filtered_train_dataset.csv")
+train_sampler = get_weighted_train_sampler(dataset, lowest_recall_classes_weight, n_samples=50000)
 TRAIN_LOADER = get_data_loader(dataset,
                                data_transform=TRAIN_TRANSFORMS,
+                               sampler=train_sampler,
                                batch_size=BATCH_SIZE,
                                num_workers=NUM_WORKERS,
                                cuda=True)
@@ -54,29 +61,25 @@ VAL_LOADER = get_data_loader(val_dataset,
                              cuda=True)
 
 
-# MODEL = FurnitureInceptionV4_350(pretrained='imagenet')
-model_checkpoint = (Path(OUTPUT_PATH) / "training_FurnitureInceptionV4_350_20180425_1156" /
-                    "model_FurnitureInceptionV4_350_1_val_loss=0.5597149.pth").as_posix()
-MODEL = torch.load(model_checkpoint)
-
+MODEL = FurnitureInceptionResNet299(pretrained='imagenet')
 
 N_EPOCHS = 100
 
 OPTIM = SGD(
     params=[
-        {"params": MODEL.stem.parameters(), 'lr': 0.0000001},
-        {"params": MODEL.features.parameters(), 'lr': 0.000001},
-        {"params": MODEL.classifier.parameters(), 'lr': 0.0001},
+        {"params": MODEL.stem.parameters(), 'lr': 0.0001},
+        {"params": MODEL.features.parameters(), 'lr': 0.002},
+        {"params": MODEL.classifier.parameters(), 'lr': 0.1},
     ],
     momentum=0.9)
 
 
 LR_SCHEDULERS = [
-    ExponentialLR(OPTIM, gamma=0.2)
+    MultiStepLR(OPTIM, milestones=[8, 10, 12, 14, 16], gamma=0.3)
 ]
 
 
-REDUCE_LR_ON_PLATEAU = ReduceLROnPlateau(OPTIM, mode='min', factor=0.5, patience=3, threshold=0.1, verbose=True)
+REDUCE_LR_ON_PLATEAU = ReduceLROnPlateau(OPTIM, mode='min', factor=0.5, patience=3, threshold=0.08, verbose=True)
 
 EARLY_STOPPING_KWARGS = {
     'patience': 15,
