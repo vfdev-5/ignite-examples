@@ -60,7 +60,10 @@ VAL_LOADER = get_data_loader(val_dataset,
                              cuda=True)
 
 
-MODEL = FurnitureInceptionV4_350(pretrained='imagenet')
+model_checkpoint = (Path(OUTPUT_PATH) / "train_inceptionv4_350_smart_sampler_resized_crop" /
+                    "20180502_0902" /
+                    "model_FurnitureInceptionV4_350_1_val_loss=0.7726298.pth").as_posix()
+MODEL = torch.load(model_checkpoint)
 
 
 N_EPOCHS = 100
@@ -75,7 +78,7 @@ OPTIM = SGD(
 
 
 LR_SCHEDULERS = [
-    MultiStepLR(OPTIM, milestones=[3, 4, 5, 6, 8, 10, 12], gamma=0.6)
+    MultiStepLR(OPTIM, milestones=[2, 3, 4, 5, 6, 8, 10, 12], gamma=0.62)
 ]
 
 

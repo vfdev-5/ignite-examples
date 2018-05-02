@@ -1,3 +1,5 @@
+import warnings
+
 import numpy as np
 
 import torch
@@ -51,13 +53,21 @@ class SmartWeightedRandomSampler(WeightedRandomSampler):
 
         self.weights_indices_per_class = {}
         unique_classes = np.unique(targets)
+        assert len(unique_classes) > 0
         for c in unique_classes:
-            self.weights_indices_per_class[c] = np.where(targets == int(c))[0].tolist()
+            indices = np.where(targets == c)[0].tolist()
+            assert len(indices) > 0, "No targets found for the class {}".format(c)
+            self.weights_indices_per_class[c] = indices
+        assert len(self.weights_indices_per_class) == len(unique_classes)
 
         super(SmartWeightedRandomSampler, self).__init__(weights, num_samples, replacement=True)
 
     def update_weights(self, class_weights):
         for c, w in class_weights:
+            if c not in self.weights_indices_per_class:
+                warnings.warn("Class {} is not found in classes with weight indices: {}"
+                              .format(c, list(self.weights_indices_per_class.keys())))
+                continue
             indices = self.weights_indices_per_class[c]
             self.weights[indices] = w
 
