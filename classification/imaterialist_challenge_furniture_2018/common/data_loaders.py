@@ -84,12 +84,15 @@ def get_trainval_indices(dataset, fold_index=0, n_splits=5, xy_transforms=None, 
 def get_data_loader(dataset_or_path,
                     data_transform=None,
                     sample_indices=None,
+                    sampler=None,
                     collate_fn=default_collate,
                     batch_size=16,
                     num_workers=8, cuda=True):
     assert isinstance(dataset_or_path, Dataset) or \
         (isinstance(dataset_or_path, (str, Path)) and Path(dataset_or_path).exists()), \
         "Dataset or path should be either Dataset or path to images, but given {}".format(dataset_or_path)
+
+    assert sample_indices is None or sampler is None, "Both are not possible"
 
     if data_transform is not None and isinstance(data_transform, (list, tuple)):
         data_transform = Compose(data_transform)
@@ -99,15 +102,18 @@ def get_data_loader(dataset_or_path,
     else:
         dataset = dataset_or_path
 
-    if sample_indices is None:
+    if sample_indices is None and sampler is None:
         sample_indices = np.arange(len(dataset))
+
+    if sample_indices is not None:
+        sampler = SubsetRandomSampler(sample_indices)
 
     dataset = TransformedDataset(dataset, transforms=read_image, target_transforms=lambda l: l - 1)
     if data_transform is not None:
         dataset = TransformedDataset(dataset, transforms=data_transform)
 
     data_loader = DataLoader(dataset, batch_size=batch_size,
-                             sampler=SubsetRandomSampler(sample_indices),
+                             sampler=sampler,
                              collate_fn=collate_fn,
                              num_workers=num_workers, pin_memory=cuda)
     return data_loader
