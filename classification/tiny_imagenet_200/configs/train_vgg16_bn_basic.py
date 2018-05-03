@@ -11,7 +11,6 @@ SEED = 12345
 DEBUG = True
 
 OUTPUT_PATH = "output"
-# DATASET_PATH = "/home/fast_storage/tiny-imagenet-200/"
 DATASET_PATH = "/home/local_data/tiny-imagenet-200"
 
 TRAINVAL_SPLIT = {

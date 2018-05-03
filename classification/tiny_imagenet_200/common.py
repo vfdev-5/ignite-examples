@@ -23,12 +23,13 @@ def save_conf(config_file, logdir, logger, writer):
         Configuration file: {}
 
         LOG_DIR: {}
-
+        
+    ```
     """.format(config_file, logdir)
     with open(config_file, 'r') as reader:
         lines = reader.readlines()
         for l in lines:
             conf_str += l
-    conf_str += "\n\n"
+    conf_str += "```\n\n"
     logger.info(conf_str)
     writer.add_text('Configuration', conf_str)

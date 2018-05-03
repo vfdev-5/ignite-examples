@@ -15,8 +15,11 @@ def create_fig_target_distribution_per_batch(y_counts_df, n_classes_per_fig=20):
     k = int(np.ceil(n / m))
 
     with sns.axes_style("whitegrid"):
-        fig, axarr = plt.subplots(k, m, figsize=(20, 20))
-
+        fig, axarr = plt.subplots(k, m, figsize=(10, 10))
+        if not isinstance(axarr, np.ndarray):
+            axarr = np.array([axarr])
+        if axarr.ndim == 1:
+            axarr = axarr[None, :]
         for c in range(min(k * m, n)):
             i, j = np.unravel_index(c, dims=(k, m))
             classes = y_counts_df.columns[c * n_classes_per_fig:(c + 1) * n_classes_per_fig]
@@ -36,7 +39,10 @@ def create_fig_targets_distribution(y_counts_df, n_classes_per_fig=20):
 
     with sns.axes_style("whitegrid"):
         fig, axarr = plt.subplots(k, m, figsize=(20, 20))
-
+        if not isinstance(axarr, np.ndarray):
+            axarr = np.array([axarr])
+        if axarr.ndim == 1:
+            axarr = axarr[None, :]
         for c in range(min(k * m, n)):
             i, j = np.unravel_index(c, dims=(k, m))
             classes = y_total.index[c * n_classes_per_fig:(c + 1) * n_classes_per_fig]
@@ -51,8 +57,11 @@ def create_fig_targets_distribution(y_counts_df, n_classes_per_fig=20):
 def create_fig_samples_min_avg_max_per_batch(x_stats_df, min_cols, avg_cols, max_cols):
     n_channels = len(min_cols)
     fig, axarr = plt.subplots(n_channels, 3, figsize=(20, 20))
+    if not isinstance(axarr, np.ndarray):
+        axarr = np.array([axarr])
+    if axarr.ndim == 1:
+        axarr = axarr[None, :]
     fig.suptitle("Sample min/avg/max per bands")
-
     with sns.axes_style("whitegrid"):
         for i in range(n_channels):
             for j, col in enumerate([min_cols, avg_cols, max_cols]):
@@ -77,6 +86,10 @@ def create_fig_param_per_class(param_values, param_name, classes=None, n_classes
         m = min(3, n)
         k = int(np.ceil(n / m))
         fig, axarr = plt.subplots(k, m, figsize=(20, 20))
+        if not isinstance(axarr, np.ndarray):
+            axarr = np.array([axarr])
+        if axarr.ndim == 1:
+            axarr = axarr[None, :]
         max_val = param_values.max() * 1.05
         for c in range(min(k * m, n)):
             i, j = np.unravel_index(c, dims=(k, m))

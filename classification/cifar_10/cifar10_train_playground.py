@@ -365,7 +365,7 @@ def run(path, model_name, imgaugs,
             classes = np.array(["class_{}".format(i) for i in range(n_classes)])
             sorted_classes = classes[indices]
             fig = create_fig_param_per_class(sorted_values, metric_name, classes=sorted_classes, n_classes_per_fig=20)
-            fname = os.path.join(log_images_dir, ("{}_{}_{}_per_class.png".format(mode, epoch, metric_name)))
+            fname = os.path.join(log_images_dir, "{}_{}_{}_per_class.png".format(mode, epoch, metric_name))
             fig.savefig(fname)
             # Add figure in TB
             img = Image.open(fname)

@@ -17,7 +17,7 @@ try:
 except ImportError:
     raise RuntimeError("No tensorboardX package is found. Please install with the command: \npip install tensorboardX")
 
-from ignite.engines import Events, Engine
+from ignite.engine import Events, Engine
 from ignite.handlers import Timer
 
 from common import setup_logger, save_conf

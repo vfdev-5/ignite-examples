@@ -62,6 +62,7 @@ def create_fig_samples_min_avg_max_per_batch(x_stats_df, min_cols, avg_cols, max
     if axarr.ndim == 1:
         axarr = axarr[None, :]
     fig.suptitle("Sample min/avg/max per bands")
+
     with sns.axes_style("whitegrid"):
         for i in range(n_channels):
             for j, col in enumerate([min_cols, avg_cols, max_cols]):

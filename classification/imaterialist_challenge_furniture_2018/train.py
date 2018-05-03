@@ -6,7 +6,6 @@ import logging
 from importlib import util
 import shutil
 
-
 import numpy as np
 from PIL import Image
 
@@ -20,10 +19,10 @@ try:
 except ImportError:
     raise RuntimeError("No tensorboardX package is found. Please install with the command: \npip install tensorboardX")
 
-from ignite.engines import Events, create_supervised_evaluator, Engine
+from ignite.engine import Events, create_supervised_evaluator
 from ignite.metrics import CategoricalAccuracy, Loss, Precision, Recall
 from ignite.handlers import ModelCheckpoint, Timer, EarlyStopping
-from ignite._utils import to_variable, to_tensor
+from ignite._utils import convert_tensor
 
 # Load common module
 sys.path.insert(0, Path(__file__).absolute().parent.parent.as_posix())
@@ -31,46 +30,53 @@ from common import setup_logger, save_conf
 from common.figures import create_fig_param_per_class
 
 
-def write_model_graph(writer, model, data_loader, cuda):
+def write_model_graph(writer, model, data_loader, device):
     data_loader_iter = iter(data_loader)
     x, y = next(data_loader_iter)
-    x = to_variable(x, cuda=cuda)
+    x = convert_tensor(x, device=device)
     try:
         writer.add_graph(model, x)
     except Exception as e:
         print("Failed to save model graph: {}".format(e))
 
 
-def create_supervised_trainer(model, optimizer, loss_fn, metrics={}, cuda=False):
+# ## Until "Trainer with metrics #165" is merged, https://github.com/pytorch/ignite/pull/165
+from ignite.engine import Engine, _prepare_batch
 
-    def _prepare_batch(batch):
-        x, y = batch
-        x = to_variable(x, cuda=cuda)
-        y = to_variable(y, cuda=cuda)
-        return x, y
 
+def create_supervised_trainer(model, optimizer, loss_fn, metrics={}, device=None):
+    """
+    Factory function for creating a trainer for supervised models
+    Args:
+        model (torch.nn.Module): the model to train
+        optimizer (torch.optim.Optimizer): the optimizer to use
+        loss_fn (torch.nn loss function): the loss function to use
+        metrics (dict of str: Metric): a map of metric names to Metrics
+        device (optional): device type specification (default: None)
+    Returns:
+        Engine: a trainer engine with supervised update function
+    """
     def _update(engine, batch):
         model.train()
         optimizer.zero_grad()
-        x, y = _prepare_batch(batch)
+        x, y = _prepare_batch(batch, device=device)
         y_pred = model(x)
         loss = loss_fn(y_pred, y)
         loss.backward()
         optimizer.step()
-        return {
-            'loss': loss.data.cpu()[0],
-            'y_pred': y_pred,
-            'y': y
-        }
+        return loss.item(), y_pred, y
 
-    trainer = Engine(_update)
+    def _metrics_transform(output):
+        return output[1], output[2]
+
+    engine = Engine(_update)
 
     for name, metric in metrics.items():
-        trainer.add_event_handler(Events.EPOCH_STARTED, metric.started)
-        trainer.add_event_handler(Events.ITERATION_COMPLETED, metric.iteration_completed)
-        trainer.add_event_handler(Events.EPOCH_COMPLETED, metric.completed, name)
+        metric._output_transform = _metrics_transform
+        metric.attach(engine, name)
 
-    return trainer
+    return engine
+# ## END OF Until "Trainer with metrics #165" is merged, https://github.com/pytorch/ignite/pull/165
 
 
 def load_config(config_filepath):
@@ -224,9 +230,9 @@ def run(config_file):
         if iter % log_interval == 0:
             logger.info("Epoch[{}] Iteration[{}/{}] Loss: {:.4f}".format(engine.state.epoch, iter,
                                                                          len(train_loader),
-                                                                         engine.state.output['loss']))
+                                                                         engine.state.output[0]))
 
-            writer.add_scalar("training/loss_vs_iterations", engine.state.output['loss'], engine.state.iteration)
+            writer.add_scalar("training/loss_vs_iterations", engine.state.output[0], engine.state.iteration)
 
     @trainer.on(Events.EPOCH_STARTED)
     def update_lr_schedulers(engine):
