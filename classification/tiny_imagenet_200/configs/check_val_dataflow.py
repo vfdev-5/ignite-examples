@@ -18,4 +18,4 @@ _, DATA_LOADER = get_trainval_data_loaders(DATASET_PATH,
                                            VAL_TRANSFORMS,
                                            BATCH_SIZE, BATCH_SIZE,
                                            TRAINVAL_SPLIT,
-                                           NUM_WORKERS, seed=SEED, cuda=True)
+                                           NUM_WORKERS, seed=SEED, device='cuda')

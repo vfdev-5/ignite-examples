@@ -165,12 +165,13 @@ def run(config_file):
 
     save_conf(config_file, log_dir.as_posix(), logger, writer)
 
-    cuda = torch.cuda.is_available()
-    if cuda:
+    device = 'cpu'
+    if torch.cuda.is_available():
         logger.debug("CUDA is enabled")
         from torch.backends import cudnn
         cudnn.benchmark = True
-        model = model.cuda()
+        device = 'cuda'
+        model = model.to(device)
 
     logger.debug("Setup train/val dataloaders")
     train_loader, val_loader = config["TRAIN_LOADER"], config["VAL_LOADER"]
@@ -179,31 +180,27 @@ def run(config_file):
     logger.debug("- validation data loader: {} number of batches | {} number of samples"
                  .format(len(val_loader), len(val_loader.dataset)))
 
-    write_model_graph(writer, model=model, data_loader=train_loader, cuda=cuda)
+    write_model_graph(writer, model=model, data_loader=train_loader, device=device)
 
     optimizer = config["OPTIM"]
 
     logger.debug("Setup criterion")
     criterion = config["CRITERION"]
-    if cuda:
-        criterion = criterion.cuda()
+    if "cuda" in device and isinstance(criterion, nn.Module):
+        criterion = criterion.to(device)
 
     lr_schedulers = config.get("LR_SCHEDULERS")
-
-    def output_transform(output):
-        y_pred = output['y_pred']
-        y = output['y']
-        return to_tensor(y_pred, cpu=not cuda), to_tensor(y, cpu=not cuda)
 
     logger.debug("Setup ignite trainer and evaluator")
     trainer = create_supervised_trainer(model, optimizer, criterion,
                                         metrics={
-                                            'accuracy': CategoricalAccuracy(output_transform=output_transform),
-                                            'nll': Loss(criterion, output_transform=output_transform),
-                                            'precision': Precision(output_transform=output_transform),
-                                            'recall': Recall(output_transform=output_transform)
+                                            'accuracy': CategoricalAccuracy(),
+                                            'nll': Loss(criterion),
+                                            'precision': Precision(),
+                                            'recall': Recall()
                                         },
-                                        cuda=cuda)
+                                        device=device)
+
     evaluator = create_supervised_evaluator(model,
                                             metrics={
                                                 'accuracy': CategoricalAccuracy(),
@@ -211,7 +208,7 @@ def run(config_file):
                                                 'precision': Precision(),
                                                 'recall': Recall(),
                                             },
-                                            cuda=cuda)
+                                            device=device)
 
     logger.debug("Setup handlers")
     log_interval = config.get("LOG_INTERVAL", 100)

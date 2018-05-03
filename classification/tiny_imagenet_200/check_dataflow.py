@@ -81,8 +81,8 @@ def run(config_file):
 
     save_conf(config_file, log_dir, logger, writer)
 
-    cuda = torch.cuda.is_available()
-    if cuda:
+    device = 'cpu'
+    if torch.cuda.is_available():
         logger.debug("CUDA is enabled")
         from torch.backends import cudnn
         cudnn.benchmark = True
