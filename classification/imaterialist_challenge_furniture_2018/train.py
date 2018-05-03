@@ -222,7 +222,7 @@ def run(config_file):
     def log_training_loss(engine):
         iter = (engine.state.iteration - 1) % len(train_loader) + 1
         if iter % log_interval == 0:
-            logger.info("Epoch[{}] Iteration[{}/{}] Loss: {:.2f}".format(engine.state.epoch, iter,
+            logger.info("Epoch[{}] Iteration[{}/{}] Loss: {:.4f}".format(engine.state.epoch, iter,
                                                                          len(train_loader),
                                                                          engine.state.output['loss']))
 
@@ -273,7 +273,7 @@ def run(config_file):
     def log_training_metrics(engine):
         epoch = engine.state.epoch
         logger.info("One epoch training time (seconds): {}".format(timer.value()))
-        logger.info("Training Results - Epoch: {}  Avg accuracy: {:.2f} Avg loss: {:.2f}"
+        logger.info("Training Results - Epoch: {}  Avg accuracy: {:.4f} Avg loss: {:.4f}"
                     .format(engine.state.epoch, engine.state.metrics['accuracy'], engine.state.metrics['nll']))
         writer.add_scalar("training/avg_accuracy", engine.state.metrics['accuracy'], epoch)
         writer.add_scalar("training/avg_error", 1.0 - engine.state.metrics['accuracy'], epoch)
@@ -289,7 +289,7 @@ def run(config_file):
         writer.add_scalar("validation/avg_loss", avg_nll, epoch)
         writer.add_scalar("validation/avg_accuracy", avg_accuracy, epoch)
         writer.add_scalar("validation/avg_error", 1.0 - avg_accuracy, epoch)
-        logger.info("Validation Results - Epoch: {}  Avg accuracy: {:.2f} Avg loss: {:.2f}"
+        logger.info("Validation Results - Epoch: {}  Avg accuracy: {:.4f} Avg loss: {:.4f}"
                     .format(engine.state.epoch, avg_accuracy, avg_nll))
         log_precision_recall_results(evaluator, epoch, "validation")
 
