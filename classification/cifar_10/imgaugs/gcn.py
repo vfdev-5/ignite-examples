@@ -1,5 +1,7 @@
 import numpy as np
 import torch
+from torchvision.transforms import RandomVerticalFlip, RandomHorizontalFlip, RandomCrop
+from torchvision.transforms import ColorJitter, ToTensor
 
 
 class GlobalContrastNormalize(object):
@@ -27,3 +29,25 @@ class GlobalContrastNormalize(object):
         normalizer = np.sqrt(self.sqrt_bias + img_var) / self.scale
         normalizer = 1.0 if normalizer < self.min_divisor else normalizer
         return img_tensor / normalizer
+
+
+train_data_transform = [
+    RandomCrop(size=32, padding=4),
+    RandomHorizontalFlip(p=0.5),
+    RandomVerticalFlip(p=0.5),
+    ColorJitter(hue=0.1, brightness=0.1),
+    ToTensor(),
+    # https://github.com/lisa-lab/pylearn2/blob/master/pylearn2/scripts/datasets/make_cifar10_gcn_whitened.py#L19
+    GlobalContrastNormalize(scale=55.0)
+]
+
+
+val_data_transform = [
+    RandomHorizontalFlip(p=0.5),
+    RandomVerticalFlip(p=0.5),
+    ToTensor(),
+    # https://github.com/lisa-lab/pylearn2/blob/master/pylearn2/scripts/datasets/make_cifar10_gcn_whitened.py#L58
+    GlobalContrastNormalize(scale=55.0)
+]
+
+test_data_transform = val_data_transform

@@ -49,7 +49,7 @@ def DownloadImage(key_url):
         # print('Image %s already exists. Skipping download.' % filename)
         return
     try:
-        response = requests.get(url)
+        response = requests.get(url, timeout=10.0)
     except:
         print('Warning: Could not download image %s from %s' % (key, url))
         return

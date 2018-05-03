@@ -1,11 +1,12 @@
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 
 from PIL import Image
 
 from torch.utils.data import Dataset, DataLoader
-from torch.utils.data.sampler import SubsetRandomSampler
+from torch.utils.data.dataloader import default_collate
 from torchvision.transforms import Compose
 
 
@@ -33,6 +34,23 @@ class TrainvalFilesDataset(Dataset):
         return self.images[index], self.labels[index]
 
 
+class FilesFromCsvDataset(Dataset):
+
+    def __init__(self, csv_filepath):
+        self.csv_filepath = Path(csv_filepath)
+        assert self.csv_filepath.exists(), "CSV filepath '{}' is not found".format(csv_filepath)
+        df = pd.read_csv(self.csv_filepath)
+        self.n = len(df)
+        self.images = df['filepath'].values
+        self.labels = df['label'].values
+
+    def __len__(self):
+        return self.n
+
+    def __getitem__(self, index):
+        return self.images[index], self.labels[index]
+
+
 class TestFilesDataset(Dataset):
 
     def __init__(self, path):
@@ -40,13 +58,28 @@ class TestFilesDataset(Dataset):
         assert path.exists(), "Test dataset is not found at '{}'".format(path)
         files = path.glob("*.png")
         self.images = [f for f in files]
+        if "_" in self.images[0].stem:
+            self.image_ids = [self.train_filepath_to_image_id(f) for f in self.images]
+        else:
+            self.image_ids = [self.test_filepath_to_image_id(f) for f in self.images]
         self.n = len(self.images)
 
     def __len__(self):
         return self.n
 
     def __getitem__(self, index):
-        return self.images[index].as_posix(), int(self.images[index].stem)
+        return self.images[index].as_posix(), self.image_ids[index]
+
+    @staticmethod
+    def train_filepath_to_image_id(filepath):
+        stem = filepath.stem
+        split = stem.split("_")
+        return int(split[0])
+
+    @staticmethod
+    def test_filepath_to_image_id(filepath):
+        stem = filepath.stem
+        return int(stem)
 
 
 def read_image(fp):
@@ -81,17 +114,16 @@ def get_data_loaders(train_dataset_path,
                      train_data_transform,
                      val_data_transform,
                      train_batch_size, val_batch_size,
-                     num_workers, cuda=True):
+                     num_workers,
+                     cuda=True,
+                     collate_fn=default_collate):
     if isinstance(train_data_transform, (list, tuple)):
         train_data_transform = Compose(train_data_transform)
 
     if isinstance(val_data_transform, (list, tuple)):
         val_data_transform = Compose(val_data_transform)
 
-    corrupted_files = [
-        # (Path(train_dataset_path) / "124682_20.png").as_posix(),
-    ]
-    train_dataset = TrainvalFilesDataset(train_dataset_path, corrupted_files=corrupted_files)
+    train_dataset = TrainvalFilesDataset(train_dataset_path)
     val_dataset = TrainvalFilesDataset(val_dataset_path)
 
     train_dataset = TransformedDataset(train_dataset, transforms=read_image,
@@ -103,9 +135,10 @@ def get_data_loaders(train_dataset_path,
 
     train_loader = DataLoader(train_dataset, batch_size=train_batch_size,
                               shuffle=True,
-                              # sampler=SubsetRandomSampler(train_indices),
+                              collate_fn=collate_fn,
                               num_workers=num_workers, pin_memory=cuda)
     val_loader = DataLoader(val_dataset, batch_size=val_batch_size, shuffle=True,
+                            collate_fn=collate_fn,
                             num_workers=num_workers, pin_memory=cuda)
 
     return train_loader, val_loader

@@ -7,6 +7,7 @@ import logging
 from importlib import util
 
 import numpy as np
+from PIL import Image
 
 from sklearn.model_selection import StratifiedKFold
 
@@ -24,15 +25,65 @@ try:
 except ImportError:
     raise RuntimeError("No tensorboardX package is found. Please install with the command: \npip install tensorboardX")
 
-from ignite.engines import Events, create_supervised_evaluator, Engine
+from ignite.engine import Events, create_supervised_evaluator
 from ignite.metrics import CategoricalAccuracy, Loss, Precision, Recall
 from ignite.handlers import ModelCheckpoint, Timer, EarlyStopping
-from ignite._utils import to_variable, to_tensor
+from ignite._utils import convert_tensor
 
 from models.small_squeezenets_v1_1 import get_small_squeezenet_v1_1, SqueezeNetV11BN
 from models.small_vgg16_bn import get_small_vgg16_bn
 from models.small_nasnet_a_mobile import SmallNASNetAMobile
 from lr_schedulers import LRSchedulerWithRestart
+from figures import create_fig_param_per_class
+
+
+def write_model_graph(writer, model, data_loader, device):
+    data_loader_iter = iter(data_loader)
+    x, y = next(data_loader_iter)
+    x = convert_tensor(x, device=device)
+    try:
+        writer.add_graph(model, x)
+    except Exception as e:
+        print("Failed to save model graph: {}".format(e))
+
+
+# ## Until "Trainer with metrics #165" is merged, https://github.com/pytorch/ignite/pull/165
+from ignite.engine import Engine, _prepare_batch
+
+
+def create_supervised_trainer(model, optimizer, loss_fn, metrics={}, device=None):
+    """
+    Factory function for creating a trainer for supervised models
+    Args:
+        model (torch.nn.Module): the model to train
+        optimizer (torch.optim.Optimizer): the optimizer to use
+        loss_fn (torch.nn loss function): the loss function to use
+        metrics (dict of str: Metric): a map of metric names to Metrics
+        device (optional): device type specification (default: None)
+    Returns:
+        Engine: a trainer engine with supervised update function
+    """
+    def _update(engine, batch):
+        model.train()
+        optimizer.zero_grad()
+        x, y = _prepare_batch(batch, device=device)
+        y_pred = model(x)
+        loss = loss_fn(y_pred, y)
+        loss.backward()
+        optimizer.step()
+        return loss.item(), y_pred, y
+
+    def _metrics_transform(output):
+        return output[1], output[2]
+
+    engine = Engine(_update)
+
+    for name, metric in metrics.items():
+        metric._output_transform = _metrics_transform
+        metric.attach(engine, name)
+
+    return engine
+# ## END OF Until "Trainer with metrics #165" is merged, https://github.com/pytorch/ignite/pull/165
 
 
 SEED = 12345
@@ -69,7 +120,7 @@ def get_train_val_indices(data_loader, fold_index=0, n_splits=5):
             return train_indices, val_indices
 
 
-def get_data_loaders(dataset_path, imgaugs, train_batch_size, val_batch_size, num_workers, cuda=True):
+def get_data_loaders(dataset_path, imgaugs, train_batch_size, val_batch_size, num_workers, device=None):
 
     # Load imgaugs module:
     this_dir = os.path.dirname(__file__)
@@ -94,12 +145,13 @@ def get_data_loaders(dataset_path, imgaugs, train_batch_size, val_batch_size, nu
 
     train_indices, val_indices = get_train_val_indices(trainval_loader, fold_index=0, n_splits=5)
 
+    pin_memory = 'cuda' in device if device is not None else False
     train_loader = DataLoader(train_dataset, batch_size=train_batch_size,
                               sampler=SubsetRandomSampler(train_indices),
-                              num_workers=num_workers, pin_memory=cuda)
+                              num_workers=num_workers, pin_memory=pin_memory)
     val_loader = DataLoader(val_dataset, batch_size=val_batch_size,
                             sampler=SubsetRandomSampler(val_indices),
-                            num_workers=num_workers, pin_memory=cuda)
+                            num_workers=num_workers, pin_memory=pin_memory)
 
     return train_loader, val_loader
 
@@ -119,46 +171,6 @@ def setup_logger(logger, output, level=logging.INFO):
     # add the handlers to the logger
     logger.addHandler(fh)
     logger.addHandler(ch)
-
-
-def write_model_graph(writer, model, cuda):
-    try:
-        dummy_input = to_variable(torch.rand(10, 3, 32, 32), cuda=cuda)
-        writer.add_graph(model, dummy_input)
-    except Exception as e:
-        print("Failed to save model graph: {}".format(e))
-
-
-def create_supervised_trainer(model, optimizer, loss_fn, metrics={}, cuda=False):
-
-    def _prepare_batch(batch):
-        x, y = batch
-        x = to_variable(x, cuda=cuda)
-        y = to_variable(y, cuda=cuda)
-        return x, y
-
-    def _update(engine, batch):
-        model.train()
-        optimizer.zero_grad()
-        x, y = _prepare_batch(batch)
-        y_pred = model(x)
-        loss = loss_fn(y_pred, y)
-        loss.backward()
-        optimizer.step()
-        return {
-            'loss': loss.data.cpu()[0],
-            'y_pred': y_pred,
-            'y': y
-        }
-
-    trainer = Engine(_update)
-
-    for name, metric in metrics.items():
-        trainer.add_event_handler(Events.EPOCH_STARTED, metric.started)
-        trainer.add_event_handler(Events.ITERATION_COMPLETED, metric.iteration_completed)
-        trainer.add_event_handler(Events.EPOCH_COMPLETED, metric.completed, name)
-
-    return trainer
 
 
 def save_conf(logger, writer, model_name, imgaugs,
@@ -240,11 +252,12 @@ def run(path, model_name, imgaugs,
               lr_reduce_patience, early_stop_patience,
               log_dir)
 
-    cuda = torch.cuda.is_available()
-    if cuda:
+    device = 'cpu'
+    if torch.cuda.is_available():
         logger.debug("CUDA is enabled")
         from torch.backends import cudnn
         cudnn.benchmark = True
+        device = 'cuda'
 
     logger.debug("Setup model: {}".format(model_name))
 
@@ -255,12 +268,14 @@ def run(path, model_name, imgaugs,
         model = torch.load(model_name)
 
     model_name = model.__class__.__name__
-    if cuda:
-        model = model.cuda()
-    write_model_graph(writer, model=model, cuda=cuda)
+    if 'cuda' in device:
+        model = model.to(device)
 
     logger.debug("Setup train/val dataloaders")
-    train_loader, val_loader = get_data_loaders(path, imgaugs, train_batch_size, val_batch_size, num_workers, cuda=cuda)
+    train_loader, val_loader = get_data_loaders(path, imgaugs, train_batch_size, val_batch_size,
+                                                num_workers, device=device)
+
+    write_model_graph(writer, model, train_loader, device=device)
 
     logger.debug("Setup optimizer")
     assert optim in OPTIMIZER_MAP, "Optimizer name not in {}".format(OPTIMIZER_MAP.keys())
@@ -268,7 +283,7 @@ def run(path, model_name, imgaugs,
 
     logger.debug("Setup criterion")
     criterion = nn.CrossEntropyLoss()
-    if cuda:
+    if 'cuda' in device:
         criterion = criterion.cuda()
 
     lr_scheduler = ExponentialLR(optimizer, gamma=gamma)
@@ -280,20 +295,16 @@ def run(path, model_name, imgaugs,
                                           patience=lr_reduce_patience,
                                           threshold=0.01, verbose=True)
 
-    def output_transform(output):
-        y_pred = output['y_pred']
-        y = output['y']
-        return to_tensor(y_pred, cpu=not cuda), to_tensor(y, cpu=not cuda)
-
     logger.debug("Setup ignite trainer and evaluator")
     trainer = create_supervised_trainer(model, optimizer, criterion,
                                         metrics={
-                                            'accuracy': CategoricalAccuracy(output_transform=output_transform),
-                                            'precision': Precision(output_transform=output_transform),
-                                            'recall': Recall(output_transform=output_transform),
-                                            'nll': Loss(criterion, output_transform=output_transform)
+                                            'accuracy': CategoricalAccuracy(),
+                                            'precision': Precision(),
+                                            'recall': Recall(),
+                                            'nll': Loss(criterion)
                                         },
-                                        cuda=cuda)
+                                        device=device)
+
     evaluator = create_supervised_evaluator(model,
                                             metrics={
                                                 'accuracy': CategoricalAccuracy(),
@@ -301,7 +312,7 @@ def run(path, model_name, imgaugs,
                                                 'recall': Recall(),
                                                 'nll': Loss(criterion)
                                             },
-                                            cuda=cuda)
+                                            device=device)
 
     logger.debug("Setup handlers")
     # Setup timer to measure training time
@@ -315,11 +326,11 @@ def run(path, model_name, imgaugs,
     def log_training_loss(engine):
         iter = (engine.state.iteration - 1) % len(train_loader) + 1
         if iter % log_interval == 0:
-            logger.info("Epoch[{}] Iteration[{}/{}] Loss: {:.2f}".format(engine.state.epoch, iter,
+            logger.info("Epoch[{}] Iteration[{}/{}] Loss: {:.4f}".format(engine.state.epoch, iter,
                                                                          len(train_loader),
-                                                                         engine.state.output['loss']))
+                                                                         engine.state.output[0]))
 
-            writer.add_scalar("training/loss_vs_iterations", engine.state.output['loss'], engine.state.iteration)
+            writer.add_scalar("training/loss_vs_iterations", engine.state.output[0], engine.state.iteration)
 
     @trainer.on(Events.EPOCH_STARTED)
     def update_lr_schedulers(engine):
@@ -338,35 +349,52 @@ def run(path, model_name, imgaugs,
                 logger.debug("Learning rate (group {}): {}".format(i, lr))
                 writer.add_scalar("learning_rate_group_{}".format(i), lr, engine.state.epoch)
 
+    log_images_dir = os.path.join(log_dir, "figures")
+    os.makedirs(log_images_dir)
+
+    def log_precision_recall_results(engine, epoch, mode):
+        for metric_name in ['precision', 'recall']:
+            value = engine.state.metrics[metric_name]
+            avg_value = torch.mean(value).item()
+            writer.add_scalar("{}/avg_{}".format(mode, metric_name), avg_value, epoch)
+            # Save metric per class figure
+            sorted_values = value.to('cpu').numpy()
+            indices = np.argsort(sorted_values)
+            sorted_values = sorted_values[indices]
+            n_classes = len(sorted_values)
+            classes = np.array(["class_{}".format(i) for i in range(n_classes)])
+            sorted_classes = classes[indices]
+            fig = create_fig_param_per_class(sorted_values, metric_name, classes=sorted_classes, n_classes_per_fig=20)
+            fname = os.path.join(log_images_dir, "{}_{}_{}_per_class.png".format(mode, epoch, metric_name))
+            fig.savefig(fname)
+            # Add figure in TB
+            img = Image.open(fname)
+            tag = "{}_{}".format(mode, metric_name)
+            writer.add_image(tag, np.asarray(img), epoch)
+
     @trainer.on(Events.EPOCH_COMPLETED)
     def log_training_metrics(engine):
-
+        epoch = engine.state.epoch
         logger.info("One epoch training time (seconds): {}".format(timer.value()))
-        logger.info("Training Results - Epoch: {}  Avg accuracy: {:.2f} Avg loss: {:.2f}"
+        logger.info("Training Results - Epoch: {}  Avg accuracy: {:.4f} Avg loss: {:.4f}"
                     .format(engine.state.epoch, engine.state.metrics['accuracy'], engine.state.metrics['nll']))
-        writer.add_scalar("training/avg_accuracy", engine.state.metrics['accuracy'], engine.state.epoch)
-        writer.add_scalar("training/avg_loss", engine.state.metrics['nll'], engine.state.epoch)
-        for metric_name in ['precision', 'recall']:
-            value = engine.state.metrics[metric_name].cpu() if cuda else engine.state.metrics[metric_name]
-            avg_value = torch.mean(value)
-            writer.add_scalar("training/avg_{}".format(metric_name), avg_value, engine.state.epoch)
-            logger.debug("   {} per class: {}".format(metric_name, value.numpy().tolist()))
+        writer.add_scalar("training/avg_accuracy", engine.state.metrics['accuracy'], epoch)
+        writer.add_scalar("training/avg_error", 1.0 - engine.state.metrics['accuracy'], epoch)
+        writer.add_scalar("training/avg_loss", engine.state.metrics['nll'], epoch)
+        log_precision_recall_results(engine, epoch, "training")
 
     @trainer.on(Events.EPOCH_COMPLETED)
     def log_validation_results(engine):
+        epoch = engine.state.epoch
         metrics = evaluator.run(val_loader).metrics
         avg_accuracy = metrics['accuracy']
         avg_nll = metrics['nll']
-        writer.add_scalar("validation/avg_loss", avg_nll, engine.state.epoch)
-        writer.add_scalar("validation/avg_accuracy", avg_accuracy, engine.state.epoch)
-        logger.info("Validation Results - Epoch: {}  Avg accuracy: {:.2f} Avg loss: {:.2f}"
+        writer.add_scalar("validation/avg_loss", avg_nll, epoch)
+        writer.add_scalar("validation/avg_accuracy", avg_accuracy, epoch)
+        writer.add_scalar("validation/avg_error", 1.0 - avg_accuracy, epoch)
+        logger.info("Validation Results - Epoch: {}  Avg accuracy: {:.4f} Avg loss: {:.4f}"
                     .format(engine.state.epoch, avg_accuracy, avg_nll))
-
-        for metric_name in ['precision', 'recall']:
-            value = engine.state.metrics[metric_name].cpu() if cuda else engine.state.metrics[metric_name]
-            avg_value = torch.mean(engine.state.metrics[metric_name])
-            writer.add_scalar("validation/avg_{}".format(metric_name), avg_value, engine.state.epoch)
-            logger.debug("   {} per class: {}".format(metric_name, value.numpy().tolist()))
+        log_precision_recall_results(evaluator, epoch, "validation")
 
     @evaluator.on(Events.COMPLETED)
     def update_reduce_on_plateau(engine):
@@ -401,7 +429,7 @@ def run(path, model_name, imgaugs,
                                        create_dir=True)
     evaluator.add_event_handler(Events.COMPLETED, last_model_saver, {model_name: model})
 
-    logger.debug("Start training: {} epochs".format(epochs))
+    logger.info("Start training: {} epochs".format(epochs))
     try:
         trainer.run(train_loader, max_epochs=epochs)
     except KeyboardInterrupt:
@@ -433,8 +461,8 @@ if __name__ == "__main__":
                              "- vgg16_bn \n "
                              "- nasnet_a_mobile \n "
                              "or a path to saved model (default: squeezenet_v1_1)")
-    parser.add_argument('--imgaugs', type=str, default="imgaugs.py",
-                        help='image augmentations module, python file (default: imgaugs.py)')
+    parser.add_argument('--imgaugs', type=str, default="imgaugs/basic.py",
+                        help='image augmentations module, python file (default: imgaugs/basic.py)')
     parser.add_argument('--batch_size', type=int, default=64,
                         help='input batch size for training (default: 64)')
     parser.add_argument('--num_workers', type=int, default=8,

@@ -19,27 +19,27 @@ try:
 except ImportError:
     raise RuntimeError("No tensorboardX package is found. Please install with the command: \npip install tensorboardX")
 
-from ignite.engines import Events, Engine
+from ignite.engine import Events, Engine
 from ignite.handlers import Timer
-from ignite._utils import to_variable, to_tensor
+from ignite._utils import convert_tensor
 
 from dataflow import get_test_data_loader
 from common import setup_logger, save_conf
 
 
-def create_inferencer(model, cuda=True):
+def create_inferencer(model, device='cpu'):
 
     def _prepare_batch(batch):
         x, path = batch
-        x = to_variable(x, cuda=cuda)
+        x = convert_tensor(x, device=device)
         return x, path
 
     def _update(engine, batch):
         x, files = _prepare_batch(batch)
         y_pred = model(x)
         return {
-            "x": to_tensor(x, cpu=True),
-            "y_pred": to_tensor(y_pred, cpu=True),
+            "x": convert_tensor(x, device='cpu'),
+            "y_pred": convert_tensor(y_pred, device='cpu'),
             "files": files
         }
 
@@ -122,22 +122,23 @@ def run(config_file):
 
     save_conf(config_file, log_dir, logger, writer)
 
-    cuda = torch.cuda.is_available()
-    if cuda:
+    device = 'cpu'
+    if torch.cuda.is_available():
         logger.debug("CUDA is enabled")
         from torch.backends import cudnn
         cudnn.benchmark = True
-        model = model.cuda()
+        device = 'cuda'
+        model = model.to(device)
 
     logger.debug("Setup test dataloader")
     dataset_path = config["DATASET_PATH"]
     test_data_transform = config["TEST_TRANSFORMS"]
     batch_size = config.get("BATCH_SIZE", 64)
     num_workers = config.get("NUM_WORKERS", 8)
-    test_loader = get_test_data_loader(dataset_path, test_data_transform, batch_size, num_workers, cuda=cuda)
+    test_loader = get_test_data_loader(dataset_path, test_data_transform, batch_size, num_workers, device=device)
 
     logger.debug("Setup ignite trainer and evaluator")
-    inferencer = create_inferencer(model, cuda=cuda)
+    inferencer = create_inferencer(model, device=device)
 
     n_tta = config["N_TTA"]
 
@@ -163,7 +164,7 @@ def run(config_file):
         tta_index = engine.state.epoch - 1
         start_index = ((engine.state.iteration - 1) % len(test_loader)) * batch_size
         end_index = min(start_index + batch_size, n_samples)
-        batch_y_probas = output['y_pred'].numpy()
+        batch_y_probas = output['y_pred'].detach().numpy()
         y_probas_tta[start_index:end_index, :, tta_index] = batch_y_probas
         if tta_index == 0:
             files[start_index:end_index] = output['files']
@@ -182,6 +183,7 @@ def run(config_file):
                 IPython.embed()  # noqa
             except ImportError:
                 print("Failed to start IPython console")
+        exit(1)
     writer.close()
 
     # Average probabilities:

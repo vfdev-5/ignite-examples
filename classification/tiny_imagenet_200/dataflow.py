@@ -32,7 +32,7 @@ def get_trainval_data_loaders(dataset_path,
                               val_data_transform,
                               train_batch_size, val_batch_size,
                               trainval_split,
-                              num_workers, seed=None, cuda=True):
+                              num_workers, seed=None, device='cpu'):
     if isinstance(train_data_transform, (list, tuple)):
         train_data_transform = Compose(train_data_transform)
 
@@ -51,12 +51,13 @@ def get_trainval_data_loaders(dataset_path,
 
     train_indices, val_indices = get_train_val_indices(trainval_loader, seed=seed, **trainval_split)
 
+    pin_memory = 'cuda' in device
     train_loader = DataLoader(train_dataset, batch_size=train_batch_size,
                               sampler=SubsetRandomSampler(train_indices),
-                              num_workers=num_workers, pin_memory=cuda)
+                              num_workers=num_workers, pin_memory=pin_memory)
     val_loader = DataLoader(val_dataset, batch_size=val_batch_size,
                             sampler=SubsetRandomSampler(val_indices),
-                            num_workers=num_workers, pin_memory=cuda)
+                            num_workers=num_workers, pin_memory=pin_memory)
 
     return train_loader, val_loader
 
@@ -90,14 +91,15 @@ class TestDataset(Dataset):
 def get_test_data_loader(dataset_path,
                          test_data_transform,
                          batch_size,
-                         num_workers, cuda=True):
+                         num_workers, device='cpu'):
 
     if isinstance(test_data_transform, (list, tuple)):
         test_data_transform = Compose(test_data_transform)
 
     test_dataset = TestDataset(dataset_path, transform=test_data_transform)
 
+    pin_memory = 'cuda' in device
     test_loader = DataLoader(test_dataset, batch_size=batch_size,
                              shuffle=False, drop_last=False,
-                             num_workers=num_workers, pin_memory=cuda)
+                             num_workers=num_workers, pin_memory=pin_memory)
     return test_loader
