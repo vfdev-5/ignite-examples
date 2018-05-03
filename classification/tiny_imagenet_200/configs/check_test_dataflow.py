@@ -16,4 +16,4 @@ NUM_WORKERS = 8
 DATA_LOADER = get_test_data_loader(DATASET_PATH,
                                    TEST_TRANSFORMS,
                                    BATCH_SIZE,
-                                   NUM_WORKERS, cuda=True)
+                                   NUM_WORKERS, device='cuda')

@@ -20,9 +20,9 @@ try:
 except ImportError:
     raise RuntimeError("No tensorboardX package is found. Please install with the command: \npip install tensorboardX")
 
-from ignite.engines import Events, Engine
+from ignite.engine import Events, Engine
 from ignite.handlers import Timer
-from ignite._utils import to_variable, to_tensor
+from ignite._utils import convert_tensor
 
 
 SEED = 12345
@@ -30,7 +30,7 @@ random.seed(SEED)
 torch.manual_seed(SEED)
 
 
-def get_test_data_loader(path, imgaugs, batch_size, num_workers, cuda=True):
+def get_test_data_loader(path, imgaugs, batch_size, num_workers, device='cpu'):
 
     # Load imgaugs module:
     this_dir = os.path.dirname(__file__)
@@ -38,15 +38,8 @@ def get_test_data_loader(path, imgaugs, batch_size, num_workers, cuda=True):
     custom_module = util.module_from_spec(spec)
     spec.loader.exec_module(custom_module)
 
-    test_imgaugs = getattr(custom_module, "test_imgaugs")
-
-    test_data_transform = Compose(
-        test_imgaugs +
-        [
-            ToTensor(),
-            Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
-        ]
-    )
+    test_data_transform = getattr(custom_module, "test_data_transform")
+    test_data_transform = Compose(test_data_transform)
 
     class IndexedDataset(Dataset):
 
@@ -60,10 +53,11 @@ def get_test_data_loader(path, imgaugs, batch_size, num_workers, cuda=True):
         def __len__(self):
             return len(self.ds)
 
+    pin_memory = 'cuda' in device
     test_dataset = IndexedDataset(CIFAR10(path, train=False, transform=test_data_transform, download=True))
     test_loader = DataLoader(test_dataset, batch_size=batch_size,
                              shuffle=False, drop_last=False,
-                             num_workers=num_workers, pin_memory=cuda)
+                             num_workers=num_workers, pin_memory=pin_memory)
     return test_loader
 
 
@@ -84,32 +78,33 @@ def setup_logger(logger, output, level=logging.INFO):
     logger.addHandler(ch)
 
 
-def write_model_graph(writer, model, cuda):
+def write_model_graph(writer, model, data_loader, device):
+    data_loader_iter = iter(data_loader)
+    (x, y), indices = next(data_loader_iter)
+    x = convert_tensor(x, device=device)
     try:
-        dummy_input = to_variable(torch.rand(10, 3, 42, 42), cuda=cuda)
-        writer.add_graph(model, dummy_input)
+        writer.add_graph(model, x)
     except Exception as e:
         print("Failed to save model graph: {}".format(e))
 
 
-def create_inferencer(model, cuda=True):
+def create_inferencer(model, device='cpu'):
 
     def _prepare_batch(batch):
         (x, y), indices = batch
-        x = to_variable(x, cuda=cuda)
+        x = convert_tensor(x, device=device)
         return x, y, indices
 
     def _update(engine, batch):
         x, y, indices = _prepare_batch(batch)
         y_pred = model(x)
         return {
-            "x": to_tensor(x, cpu=True),
-            "y_pred": to_tensor(y_pred, cpu=True),
+            "x": convert_tensor(x, device='cpu'),
+            "y_pred": convert_tensor(y_pred, device='cpu'),
             "y_true": y,
             "indices": indices
         }
 
-    model.eval()
     inferencer = Engine(_update)
     return inferencer
 
@@ -162,23 +157,25 @@ def run(checkpoint, dataset_path, imgaugs, batch_size, num_workers, n_tta, outpu
         batch_size, num_workers,
         n_tta, log_dir)
 
-    cuda = torch.cuda.is_available()
-    if cuda:
+    device = 'cpu'
+    if torch.cuda.is_available():
         logger.debug("CUDA is enabled")
         from torch.backends import cudnn
         cudnn.benchmark = True
+        device = 'cuda'
 
     logger.debug("Setup model: {}".format(checkpoint))
     model = torch.load(checkpoint)
-    if cuda:
+    if 'cuda' in device:
         model = model.cuda()
-    write_model_graph(writer, model=model, cuda=cuda)
 
     logger.debug("Setup test dataloader")
-    test_loader = get_test_data_loader(dataset_path, imgaugs, batch_size, num_workers, cuda=cuda)
+    test_loader = get_test_data_loader(dataset_path, imgaugs, batch_size, num_workers, device=device)
+
+    write_model_graph(writer, model, test_loader, device=device)
 
     logger.debug("Setup ignite trainer and evaluator")
-    inferencer = create_inferencer(model, cuda=cuda)
+    inferencer = create_inferencer(model, device=device)
 
     logger.debug("Setup handlers")
     # Setup timer to measure evaluation time
@@ -203,7 +200,7 @@ def run(checkpoint, dataset_path, imgaugs, batch_size, num_workers, n_tta, outpu
         tta_index = engine.state.epoch - 1
         start_index = ((engine.state.iteration - 1) % len(test_loader)) * batch_size
         batch_indices = output['indices'].numpy()
-        batch_y_probas = output['y_pred'].numpy()
+        batch_y_probas = output['y_pred'].detach().numpy()
         batch_y_true = output['y_true'].numpy()
         end_index = min(start_index + batch_size, len(indices))
         indices[start_index:end_index, tta_index] = batch_indices
@@ -225,6 +222,8 @@ def run(checkpoint, dataset_path, imgaugs, batch_size, num_workers, n_tta, outpu
                 IPython.embed()  # noqa
             except ImportError:
                 print("Failed to start IPython console")
+        exit(1)
+
     writer.close()
 
     # Check indices:
@@ -248,7 +247,7 @@ if __name__ == "__main__":
                         help="Optional path to Cifar10 dataset")
     parser.add_argument('--n_tta', type=int, default=5,
                         help='Number of test time augmentations (default: 5)')
-    parser.add_argument('--imgaugs', type=str, default="imgaugs.py",
+    parser.add_argument('--imgaugs', type=str, default="imgaugs/basic.py",
                         help='image augmentations module (default: imgaugs.py)')
     parser.add_argument('--batch_size', type=int, default=64,
                         help='input batch size for testing (default: 64)')

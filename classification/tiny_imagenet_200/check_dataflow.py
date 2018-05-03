@@ -17,7 +17,7 @@ try:
 except ImportError:
     raise RuntimeError("No tensorboardX package is found. Please install with the command: \npip install tensorboardX")
 
-from ignite.engines import Events, Engine
+from ignite.engine import Events, Engine
 from ignite.handlers import Timer
 
 from common import setup_logger, save_conf
@@ -81,8 +81,8 @@ def run(config_file):
 
     save_conf(config_file, log_dir, logger, writer)
 
-    cuda = torch.cuda.is_available()
-    if cuda:
+    device = 'cpu'
+    if torch.cuda.is_available():
         logger.debug("CUDA is enabled")
         from torch.backends import cudnn
         cudnn.benchmark = True
