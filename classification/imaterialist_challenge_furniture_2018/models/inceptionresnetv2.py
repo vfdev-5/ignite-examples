@@ -1,4 +1,4 @@
-from torch.nn import Module, Linear, ModuleList, AdaptiveAvgPool2d
+from torch.nn import Module, Linear, ModuleList
 from pretrainedmodels.models.inceptionresnetv2 import inceptionresnetv2
 
 
