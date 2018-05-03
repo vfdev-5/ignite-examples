@@ -1,8 +1,7 @@
 import numpy as np
+import torch
 from torchvision.transforms import RandomVerticalFlip, RandomHorizontalFlip, RandomCrop
 from torchvision.transforms import ColorJitter, ToTensor
-
-import torch
 
 
 class GlobalContrastNormalize(object):
