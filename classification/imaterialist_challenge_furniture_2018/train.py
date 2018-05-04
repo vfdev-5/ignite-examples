@@ -19,7 +19,7 @@ try:
 except ImportError:
     raise RuntimeError("No tensorboardX package is found. Please install with the command: \npip install tensorboardX")
 
-from ignite.engine import Events, create_supervised_evaluator
+from ignite.engine import Events, create_supervised_trainer, create_supervised_evaluator
 from ignite.metrics import CategoricalAccuracy, Loss, Precision, Recall
 from ignite.handlers import ModelCheckpoint, Timer, EarlyStopping
 from ignite._utils import convert_tensor
@@ -28,7 +28,7 @@ from ignite._utils import convert_tensor
 sys.path.insert(0, Path(__file__).absolute().parent.parent.as_posix())
 from common import setup_logger, save_conf
 from common.figures import create_fig_param_per_class
-
+from common.dataset import get_train_eval_data_loader
 
 def write_model_graph(writer, model, data_loader, device):
     data_loader_iter = iter(data_loader)
@@ -38,45 +38,6 @@ def write_model_graph(writer, model, data_loader, device):
         writer.add_graph(model, x)
     except Exception as e:
         print("Failed to save model graph: {}".format(e))
-
-
-# ## Until "Trainer with metrics #165" is merged, https://github.com/pytorch/ignite/pull/165
-from ignite.engine import Engine, _prepare_batch
-
-
-def create_supervised_trainer(model, optimizer, loss_fn, metrics={}, device=None):
-    """
-    Factory function for creating a trainer for supervised models
-    Args:
-        model (torch.nn.Module): the model to train
-        optimizer (torch.optim.Optimizer): the optimizer to use
-        loss_fn (torch.nn loss function): the loss function to use
-        metrics (dict of str: Metric): a map of metric names to Metrics
-        device (optional): device type specification (default: None)
-    Returns:
-        Engine: a trainer engine with supervised update function
-    """
-    def _update(engine, batch):
-        model.train()
-        optimizer.zero_grad()
-        x, y = _prepare_batch(batch, device=device)
-        y_pred = model(x)
-        loss = loss_fn(y_pred, y)
-        loss.backward()
-        optimizer.step()
-        return loss.item(), y_pred, y
-
-    def _metrics_transform(output):
-        return output[1], output[2]
-
-    engine = Engine(_update)
-
-    for name, metric in metrics.items():
-        metric._output_transform = _metrics_transform
-        metric.attach(engine, name)
-
-    return engine
-# ## END OF Until "Trainer with metrics #165" is merged, https://github.com/pytorch/ignite/pull/165
 
 
 def load_config(config_filepath):
@@ -175,8 +136,17 @@ def run(config_file):
 
     logger.debug("Setup train/val dataloaders")
     train_loader, val_loader = config["TRAIN_LOADER"], config["VAL_LOADER"]
+
+    # Setup training subset to run evaluation on:
+    indices = np.arange(len(train_loader.dataset))
+    np.random.shuffle(indices)
+    indices = indices[:len(val_loader.dataset)] if len(val_loader.dataset) < len(train_loader.dataset) else indices
+    train_eval_loader = get_train_eval_data_loader(train_loader, indices)
+
     logger.debug("- train data loader: {} number of batches | {} number of samples"
                  .format(len(train_loader), len(train_loader.dataset)))
+    logger.debug("- train eval data loader: {} number of batches | {} number of samples"
+                 .format(len(train_eval_loader), len(train_eval_loader.dataset)))
     logger.debug("- validation data loader: {} number of batches | {} number of samples"
                  .format(len(val_loader), len(val_loader.dataset)))
 
@@ -192,23 +162,16 @@ def run(config_file):
     lr_schedulers = config.get("LR_SCHEDULERS")
 
     logger.debug("Setup ignite trainer and evaluator")
-    trainer = create_supervised_trainer(model, optimizer, criterion,
-                                        metrics={
-                                            'accuracy': CategoricalAccuracy(),
-                                            'nll': Loss(criterion),
-                                            'precision': Precision(),
-                                            'recall': Recall()
-                                        },
-                                        device=device)
+    trainer = create_supervised_trainer(model, optimizer, criterion, device=device)
 
-    evaluator = create_supervised_evaluator(model,
-                                            metrics={
-                                                'accuracy': CategoricalAccuracy(),
-                                                'nll': Loss(nn.CrossEntropyLoss()),
-                                                'precision': Precision(),
-                                                'recall': Recall(),
-                                            },
-                                            device=device)
+    metrics = {
+        'accuracy': CategoricalAccuracy(),
+        'precision': Precision(),
+        'recall': Recall(),
+        'nll': Loss(criterion)
+    }
+    train_evaluator = create_supervised_evaluator(model, metrics=metrics, device=device)
+    val_evaluator = create_supervised_evaluator(model, metrics=metrics, device=device)
 
     logger.debug("Setup handlers")
     log_interval = config.get("LOG_INTERVAL", 100)
@@ -227,9 +190,9 @@ def run(config_file):
         if iter % log_interval == 0:
             logger.info("Epoch[{}] Iteration[{}/{}] Loss: {:.4f}".format(engine.state.epoch, iter,
                                                                          len(train_loader),
-                                                                         engine.state.output[0]))
+                                                                         engine.state.output))
 
-            writer.add_scalar("training/loss_vs_iterations", engine.state.output[0], engine.state.iteration)
+            writer.add_scalar("training/loss_vs_iterations", engine.state.output, engine.state.iteration)
 
     @trainer.on(Events.EPOCH_STARTED)
     def update_lr_schedulers(engine):
@@ -252,13 +215,13 @@ def run(config_file):
     log_images_dir = log_dir / "figures"
     log_images_dir.mkdir(parents=True)
 
-    def log_precision_recall_results(engine, epoch, mode):
+    def log_precision_recall_results(metrics, epoch, mode):
         for metric_name in ['precision', 'recall']:
-            value = engine.state.metrics[metric_name].cpu() if cuda else engine.state.metrics[metric_name]
-            avg_value = torch.mean(value)
+            value = metrics[metric_name]
+            avg_value = torch.mean(value).item()
             writer.add_scalar("{}/avg_{}".format(mode, metric_name), avg_value, epoch)
             # Save metric per class figure
-            sorted_values = value.numpy()
+            sorted_values = value.to('cpu').numpy()
             indices = np.argsort(sorted_values)
             sorted_values = sorted_values[indices]
             n_classes = len(sorted_values)
@@ -276,28 +239,27 @@ def run(config_file):
     def log_training_metrics(engine):
         epoch = engine.state.epoch
         logger.info("One epoch training time (seconds): {}".format(timer.value()))
+        metrics = train_evaluator.run(train_eval_loader).metrics
         logger.info("Training Results - Epoch: {}  Avg accuracy: {:.4f} Avg loss: {:.4f}"
-                    .format(engine.state.epoch, engine.state.metrics['accuracy'], engine.state.metrics['nll']))
-        writer.add_scalar("training/avg_accuracy", engine.state.metrics['accuracy'], epoch)
-        writer.add_scalar("training/avg_error", 1.0 - engine.state.metrics['accuracy'], epoch)
-        writer.add_scalar("training/avg_loss", engine.state.metrics['nll'], epoch)
-        log_precision_recall_results(engine, epoch, "training")
+                    .format(engine.state.epoch, metrics['accuracy'], metrics['nll']))
+        writer.add_scalar("training/avg_accuracy", metrics['accuracy'], epoch)
+        writer.add_scalar("training/avg_error", 1.0 - metrics['accuracy'], epoch)
+        writer.add_scalar("training/avg_loss", metrics['nll'], epoch)
+        log_precision_recall_results(metrics, epoch, "training")
 
     @trainer.on(Events.EPOCH_COMPLETED)
     def log_validation_results(engine):
         epoch = engine.state.epoch
-        metrics = evaluator.run(val_loader).metrics
-        avg_accuracy = metrics['accuracy']
-        avg_nll = metrics['nll']
-        writer.add_scalar("validation/avg_loss", avg_nll, epoch)
-        writer.add_scalar("validation/avg_accuracy", avg_accuracy, epoch)
-        writer.add_scalar("validation/avg_error", 1.0 - avg_accuracy, epoch)
+        metrics = val_evaluator.run(val_loader).metrics
+        writer.add_scalar("validation/avg_loss", metrics['nll'], epoch)
+        writer.add_scalar("validation/avg_accuracy", metrics['accuracy'], epoch)
+        writer.add_scalar("validation/avg_error", 1.0 - metrics['accuracy'], epoch)
         logger.info("Validation Results - Epoch: {}  Avg accuracy: {:.4f} Avg loss: {:.4f}"
-                    .format(engine.state.epoch, avg_accuracy, avg_nll))
-        log_precision_recall_results(evaluator, epoch, "validation")
+                    .format(engine.state.epoch, metrics['accuracy'], metrics['nll']))
+        log_precision_recall_results(metrics, epoch, "validation")
 
     if reduce_on_plateau is not None:
-        @evaluator.on(Events.COMPLETED)
+        @val_evaluator.on(Events.COMPLETED)
         def update_reduce_on_plateau(engine):
             val_loss = engine.state.metrics['nll']
             reduce_on_plateau.step(val_loss)
@@ -314,7 +276,7 @@ def run(config_file):
             kwargs['score_function'] = score_function
         handler = EarlyStopping(trainer=trainer, **kwargs)
         setup_logger(handler._logger, (log_dir / "train.log").as_posix(), log_level)
-        evaluator.add_event_handler(Events.COMPLETED, handler)
+        val_evaluator.add_event_handler(Events.COMPLETED, handler)
 
     # Setup model checkpoint:
     best_model_saver = ModelCheckpoint(log_dir.as_posix(),
@@ -324,7 +286,7 @@ def run(config_file):
                                        n_saved=5,
                                        atomic=True,
                                        create_dir=True)
-    evaluator.add_event_handler(Events.COMPLETED, best_model_saver, {model_name: model})
+    val_evaluator.add_event_handler(Events.COMPLETED, best_model_saver, {model_name: model})
 
     last_model_saver = ModelCheckpoint(log_dir.as_posix(),
                                        filename_prefix="checkpoint",
@@ -332,14 +294,14 @@ def run(config_file):
                                        n_saved=1,
                                        atomic=True,
                                        create_dir=True)
-    evaluator.add_event_handler(Events.COMPLETED, last_model_saver, {model_name: model})
+    trainer.add_event_handler(Events.COMPLETED, last_model_saver, {model_name: model})
 
     # Setup custom event handlers:
     for (event, handler) in config["TRAINER_CUSTOM_EVENT_HANDLERS"]:
-        trainer.add_event_handler(event, handler, evaluator, logger)
+        trainer.add_event_handler(event, handler, val_evaluator, logger)
 
     for (event, handler) in config["EVALUATOR_CUSTOM_EVENT_HANDLERS"]:
-        evaluator.add_event_handler(event, handler, trainer, logger)
+        val_evaluator.add_event_handler(event, handler, trainer, logger)
 
     n_epochs = config["N_EPOCHS"]
     logger.info("Start training: {} epochs".format(n_epochs))
