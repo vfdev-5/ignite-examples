@@ -56,7 +56,7 @@ TRAIN_LOADER = get_data_loader(
     sample_indices=reduced_train_indices,
     batch_size=BATCH_SIZE,
     num_workers=NUM_WORKERS,
-    cuda=True
+    pin_memory=True
 )
 
 VAL_LOADER = get_data_loader(
@@ -64,7 +64,7 @@ VAL_LOADER = get_data_loader(
     data_transform=VAL_TRANSFORMS,
     batch_size=BATCH_SIZE,
     num_workers=NUM_WORKERS,
-    cuda=True
+    pin_memory=True
 )
 
 

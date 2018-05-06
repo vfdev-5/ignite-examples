@@ -48,7 +48,7 @@ TRAIN_LOADER, VAL_LOADER = get_data_loaders(
     train_batch_size=BATCH_SIZE,
     val_batch_size=BATCH_SIZE,
     num_workers=NUM_WORKERS,
-    cuda=True)
+    pin_memory=True)
 
 
 MODEL = FurnitureInceptionV4_350(pretrained='imagenet')

@@ -31,7 +31,7 @@ TEST_LOADER = get_test_data_loader(
     test_data_transform=TEST_TRANSFORMS,
     batch_size=BATCH_SIZE,
     num_workers=NUM_WORKERS,
-    cuda=True)
+    pin_memory=True)
 
 
 MODEL = (Path(OUTPUT_PATH) / "train_resnet152_350_continue_adam_resized_crop" / "20180502_1234" /

@@ -1,5 +1,4 @@
 # Basic training configuration file
-from pathlib import Path
 import numpy as np
 import torch
 from torch.optim import Adam
@@ -7,7 +6,7 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau, MultiStepLR
 from torchvision.transforms import RandomHorizontalFlip, RandomVerticalFlip
 from torchvision.transforms import RandomResizedCrop
 from torchvision.transforms import ColorJitter, ToTensor, Normalize
-from ignite.engines import Events
+from ignite.engine import Events
 from common.dataset import FilesFromCsvDataset
 from common.data_loaders import get_data_loader
 from common.sampling import SmartWeightedRandomSampler
@@ -49,14 +48,14 @@ TRAIN_LOADER = get_data_loader(dataset,
                                batch_size=BATCH_SIZE,
                                sampler=train_sampler,
                                num_workers=NUM_WORKERS,
-                               cuda=True)
+                               pin_memory=True)
 
 val_dataset = FilesFromCsvDataset("output/filtered_val_dataset.csv")
 VAL_LOADER = get_data_loader(val_dataset,
                              data_transform=VAL_TRANSFORMS,
                              batch_size=BATCH_SIZE,
                              num_workers=NUM_WORKERS,
-                             cuda=True)
+                             pin_memory=True)
 
 
 MODEL = FurnitureSqueezeNet350(pretrained=True)

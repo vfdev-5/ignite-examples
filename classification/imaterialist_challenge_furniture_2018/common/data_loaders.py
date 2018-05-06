@@ -87,7 +87,7 @@ def get_data_loader(dataset_or_path,
                     sampler=None,
                     collate_fn=default_collate,
                     batch_size=16,
-                    num_workers=8, cuda=True):
+                    num_workers=8, pin_memory=True):
     assert isinstance(dataset_or_path, Dataset) or \
         (isinstance(dataset_or_path, (str, Path)) and Path(dataset_or_path).exists()), \
         "Dataset or path should be either Dataset or path to images, but given {}".format(dataset_or_path)
@@ -115,5 +115,5 @@ def get_data_loader(dataset_or_path,
     data_loader = DataLoader(dataset, batch_size=batch_size,
                              sampler=sampler,
                              collate_fn=collate_fn,
-                             num_workers=num_workers, pin_memory=cuda)
+                             num_workers=num_workers, pin_memory=pin_memory)
     return data_loader
