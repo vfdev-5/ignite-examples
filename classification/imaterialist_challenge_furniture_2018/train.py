@@ -65,7 +65,7 @@ def load_config(config_filepath):
         config["OPTIM"] = SGD(config["MODEL"].parameters(), lr=0.1, momentum=0.9, nesterov=True)
     assert isinstance(config["OPTIM"], torch.optim.Optimizer), \
         "Optimizer should be an instance of torch.optim.Optimizer, but given {}".format(type(config["OPTIM"]))
-    
+
     if "CRITERION" not in config:
         config["CRITERION"] = nn.CrossEntropyLoss()
     assert isinstance(config["CRITERION"], nn.Module), \
@@ -101,8 +101,6 @@ def run(config_file):
     torch.manual_seed(seed)
 
     output = Path(config["OUTPUT_PATH"])
-    model = config["MODEL"]
-    model_name = model.__class__.__name__
     debug = config.get("DEBUG", False)
 
     from datetime import datetime
@@ -127,12 +125,16 @@ def run(config_file):
 
     save_conf(config_file, log_dir.as_posix(), logger, writer)
 
-    device = 'cpu'
-    if torch.cuda.is_available():
-        logger.debug("CUDA is enabled")
+    model = config["MODEL"]
+    model_name = model.__class__.__name__
+
+    device = config.get("DEVICE", 'cuda')
+    if 'cuda' in device:
+        assert torch.cuda.is_available(), \
+            "Device {} is not compatible with torch.cuda.is_available()".format(device)
         from torch.backends import cudnn
         cudnn.benchmark = True
-        device = 'cuda'
+        logger.debug("CUDA is enabled")
         model = model.to(device)
 
     logger.debug("Setup train/val dataloaders")
@@ -295,7 +297,7 @@ def run(config_file):
                                        n_saved=1,
                                        atomic=True,
                                        create_dir=True)
-    trainer.add_event_handler(Events.COMPLETED, last_model_saver, {model_name: model})
+    trainer.add_event_handler(Events.EPOCH_COMPLETED, last_model_saver, {model_name: model})
 
     # Setup custom event handlers:
     for (event, handler) in config["TRAINER_CUSTOM_EVENT_HANDLERS"]:

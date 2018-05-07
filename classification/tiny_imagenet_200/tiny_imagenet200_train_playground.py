@@ -296,7 +296,7 @@ def run(config_file):
                                        n_saved=1,
                                        atomic=True,
                                        create_dir=True)
-    trainer.add_event_handler(Events.COMPLETED, last_model_saver, {model_name: model})
+    trainer.add_event_handler(Events.EPOCH_COMPLETED, last_model_saver, {model_name: model})
 
     n_epochs = config["N_EPOCHS"]
     logger.info("Start training: {} epochs".format(n_epochs))

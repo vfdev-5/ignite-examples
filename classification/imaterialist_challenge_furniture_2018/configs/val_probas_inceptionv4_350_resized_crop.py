@@ -17,7 +17,7 @@ SAVE_PROBAS = True
 
 
 TEST_TRANSFORMS = [
-    RandomResizedCrop(350, scale=(0.7, 1.0), interpolation=3),
+    RandomResizedCrop(350, scale=(0.8, 1.0), interpolation=3),
     RandomVerticalFlip(p=0.5),
     RandomHorizontalFlip(p=0.5),
     ToTensor(),
@@ -33,7 +33,7 @@ TEST_LOADER = get_test_data_loader(
     test_data_transform=TEST_TRANSFORMS,
     batch_size=BATCH_SIZE,
     num_workers=NUM_WORKERS,
-    cuda=True)
+    pin_memory=True)
 
 
 MODEL = (Path(OUTPUT_PATH) / "training_FurnitureInceptionV4_350_20180427_1512" /

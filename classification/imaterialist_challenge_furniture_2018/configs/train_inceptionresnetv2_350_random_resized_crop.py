@@ -45,14 +45,14 @@ TRAIN_LOADER = get_data_loader(dataset,
                                data_transform=TRAIN_TRANSFORMS,
                                batch_size=BATCH_SIZE,
                                num_workers=NUM_WORKERS,
-                               cuda=True)
+                               pin_memory=True)
 
 val_dataset = FilesFromCsvDataset("output/filtered_val_dataset.csv")
 VAL_LOADER = get_data_loader(val_dataset,
                              data_transform=VAL_TRANSFORMS,
                              batch_size=BATCH_SIZE,
                              num_workers=NUM_WORKERS,
-                             cuda=True)
+                             pin_memory=True)
 
 
 MODEL = FurnitureInceptionResNet299(pretrained='imagenet')

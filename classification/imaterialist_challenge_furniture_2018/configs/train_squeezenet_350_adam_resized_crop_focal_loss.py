@@ -7,7 +7,7 @@ from torchvision.transforms import RandomApply, RandomResizedCrop
 from torchvision.transforms import ColorJitter, ToTensor, Normalize
 from common.dataset import FilesFromCsvDataset
 from common.data_loaders import get_data_loader
-from common.focal_loss import FocalLoss
+from losses.focal_loss import FocalLoss
 from models.squeezenet_350 import FurnitureSqueezeNet350
 
 SEED = 12345
@@ -42,14 +42,14 @@ TRAIN_LOADER = get_data_loader(dataset,
                                data_transform=TRAIN_TRANSFORMS,
                                batch_size=BATCH_SIZE,
                                num_workers=NUM_WORKERS,
-                               cuda=True)
+                               pin_memory=True)
 
 val_dataset = FilesFromCsvDataset("output/filtered_val_dataset.csv")
 VAL_LOADER = get_data_loader(val_dataset,
                              data_transform=VAL_TRANSFORMS,
                              batch_size=BATCH_SIZE,
                              num_workers=NUM_WORKERS,
-                             cuda=True)
+                             pin_memory=True)
 
 MODEL = FurnitureSqueezeNet350(pretrained=True)
 
