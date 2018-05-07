@@ -30,6 +30,7 @@ from common import setup_logger, save_conf
 from common.figures import create_fig_param_per_class
 from common.dataset import get_train_eval_data_loader
 
+
 def write_model_graph(writer, model, data_loader, device):
     data_loader_iter = iter(data_loader)
     x, y = next(data_loader_iter)
@@ -150,7 +151,7 @@ def run(config_file):
     logger.debug("- validation data loader: {} number of batches | {} number of samples"
                  .format(len(val_loader), len(val_loader.dataset)))
 
-    write_model_graph(writer, model=model, data_loader=train_loader, device=device)
+    # write_model_graph(writer, model=model, data_loader=train_loader, device=device)
 
     optimizer = config["OPTIM"]
 
