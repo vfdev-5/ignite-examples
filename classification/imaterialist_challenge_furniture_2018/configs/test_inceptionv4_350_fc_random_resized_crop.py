@@ -34,7 +34,7 @@ TEST_LOADER = get_test_data_loader(
     pin_memory=True)
 
 
-MODEL = (Path(OUTPUT_PATH) / "train_inceptionv4_350_fc_random_resized_crop" / "20180506_0833" /
-         "model_FurnitureInceptionV4_350_FC_5_val_loss=0.5673063.pth").as_posix()
+MODEL = (Path(OUTPUT_PATH) / "train_inceptionv4_350_fc_random_resized_crop" / "20180506_2103" /
+         "model_FurnitureInceptionV4_350_FC_9_val_loss=0.5517255.pth").as_posix()
 
 N_TTA = 12

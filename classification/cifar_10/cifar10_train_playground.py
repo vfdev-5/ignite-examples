@@ -33,6 +33,7 @@ from ignite._utils import convert_tensor
 from models.small_squeezenets_v1_1 import get_small_squeezenet_v1_1, SqueezeNetV11BN
 from models.small_vgg16_bn import get_small_vgg16_bn
 from models.small_nasnet_a_mobile import SmallNASNetAMobile
+from models.resnet_v2 import resnet18_v2, resnet34_v2, resnet50_v2, resnet101_v2, resnet152_v2
 from lr_schedulers import LRSchedulerWithRestart
 from figures import create_fig_param_per_class
 
@@ -55,7 +56,12 @@ MODEL_MAP = {
     "squeezenet_v1_1": get_small_squeezenet_v1_1,
     "squeezenet_v1_1_bn": SqueezeNetV11BN,
     "vgg16_bn": get_small_vgg16_bn,
-    "nasnet_a_mobile": SmallNASNetAMobile
+    "nasnet_a_mobile": SmallNASNetAMobile,
+    "resnet18_v2": resnet18_v2,
+    "resnet34_v2": resnet34_v2,
+    "resnet50_v2": resnet50_v2,
+    "resnet101_v2": resnet101_v2,
+    "resnet152_v2": resnet152_v2,
 }
 
 OPTIMIZER_MAP = {
