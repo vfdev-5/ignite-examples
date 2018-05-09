@@ -111,7 +111,7 @@ def get_data_loader(dataset_or_path,
 
     dataset = TransformedDataset(dataset, transforms=read_image, target_transforms=lambda l: l - 1)
     if data_transform is not None or target_transform is not None:
-        dataset = TransformedDataset(dataset, transforms=data_transform, target_transform=target_transform)
+        dataset = TransformedDataset(dataset, transforms=data_transform, target_transforms=target_transform)
 
     data_loader = DataLoader(dataset, batch_size=batch_size,
                              sampler=sampler,

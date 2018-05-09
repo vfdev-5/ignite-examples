@@ -1,5 +1,3 @@
-import math
-
 from torch import nn
 from torchvision.models.resnet import conv3x3
 import torch.utils.model_zoo as model_zoo

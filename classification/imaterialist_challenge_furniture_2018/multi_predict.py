@@ -9,5 +9,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
     print("Run multiple predictions")
     for config_file in args.config_files:
-        print("\n\n----- run {} -----\n".format(config_file))
-        run(config_file)
+        try:
+            print("\n\n----- run {} -----\n".format(config_file))
+            run(config_file)
+        except Exception as e:
+            print("\n\n !!! Run {} failed !!!\n".format(config_file))
