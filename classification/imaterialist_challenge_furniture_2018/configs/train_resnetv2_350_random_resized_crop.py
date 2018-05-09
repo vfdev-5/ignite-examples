@@ -1,18 +1,15 @@
 # Basic training configuration file
 from torch.optim import RMSprop
 from torch.optim.lr_scheduler import MultiStepLR
-from torch.utils.data.sampler import WeightedRandomSampler
-from torchvision.transforms import RandomHorizontalFlip
+from torchvision.transforms import RandomHorizontalFlip, RandomVerticalFlip
 from torchvision.transforms import RandomResizedCrop, RandomChoice
 from torchvision.transforms import ColorJitter, ToTensor, Normalize
-from ignite.engine import Events
 from common.dataset import FilesFromCsvDataset
 from common.data_loaders import get_data_loader
-from common.handlers import HardNegativeExamplesMining
-from models.inceptionv4 import FurnitureInceptionV4_350_FC
+from models.resnet import FurnitureResNetV2_50_350
 
 
-SEED = 42
+SEED = 17
 DEBUG = True
 DEVICE = 'cuda'
 
@@ -24,31 +21,30 @@ size = 350
 TRAIN_TRANSFORMS = [
     RandomChoice(
         [
-            RandomResizedCrop(size, scale=(0.6, 8.0), interpolation=3),
-            RandomResizedCrop(size, scale=(0.8, 1.0), interpolation=3),
+            RandomResizedCrop(size, scale=(0.4, 6.0), interpolation=3),
+            RandomResizedCrop(size, scale=(0.6, 1.0), interpolation=3),
         ]
     ),
     RandomHorizontalFlip(p=0.5),
+    RandomVerticalFlip(p=0.5),
     ColorJitter(hue=0.12, brightness=0.12),
     ToTensor(),
     Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
 ]
 
 VAL_TRANSFORMS = [
-    RandomResizedCrop(size, scale=(0.8, 1.0), interpolation=3),
+    RandomResizedCrop(size, scale=(0.7, 1.0), interpolation=3),
     RandomHorizontalFlip(p=0.5),
     ToTensor(),
     Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
 ]
 
 
-BATCH_SIZE = 24
+BATCH_SIZE = 32
 NUM_WORKERS = 15
 
 
 dataset = FilesFromCsvDataset("output/filtered_train_dataset.csv")
-weights = [1.0] * len(dataset)
-train_sampler = WeightedRandomSampler(weights, num_samples=len(dataset))
 TRAIN_LOADER = get_data_loader(dataset,
                                data_transform=TRAIN_TRANSFORMS,
                                batch_size=BATCH_SIZE,
@@ -64,7 +60,7 @@ VAL_LOADER = get_data_loader(val_dataset,
                              pin_memory='cuda' in DEVICE)
 
 
-MODEL = FurnitureInceptionV4_350_FC(pretrained='imagenet')
+MODEL = FurnitureResNetV2_50_350()
 
 
 N_EPOCHS = 100
@@ -72,34 +68,22 @@ N_EPOCHS = 100
 
 OPTIM = RMSprop(
     params=[
-        {"params": MODEL.stem.parameters(), 'lr': 0.0012},
-        {"params": MODEL.features.parameters(), 'lr': 0.0034},
-        {"params": MODEL.classifier.parameters(), 'lr': 0.0045},
-        {"params": MODEL.final_classifier.parameters(), 'lr': 0.045},
+        {"params": MODEL.stem.parameters(), 'lr': 0.045},
+        {"params": MODEL.features.parameters(), 'lr': 0.045},
+        {"params": MODEL.classifier.parameters(), 'lr': 0.045},
     ],
     alpha=0.9,
     eps=1.0)
 
 
 LR_SCHEDULERS = [
-    MultiStepLR(OPTIM, milestones=[2, 4, 6, 8, 10, 12], gamma=0.94),
+    MultiStepLR(OPTIM, milestones=[2, 4, 6, 8, 10, 12, 14, 16, 18, 20], gamma=0.94)
 ]
-
-# REDUCE_LR_ON_PLATEAU = ReduceLROnPlateau(OPTIM, mode='min', factor=0.5, patience=2, threshold=0.1, verbose=True)
 
 
 EARLY_STOPPING_KWARGS = {
     'patience': 15,
-    # 'score_function': None
 }
 
-
-hnem = HardNegativeExamplesMining(n_samples=len(dataset))
-
-EVALUATOR_CUSTOM_EVENT_HANDLERS = [
-    # (event, handler), handler signature should be `foo(evaluator, trainer, logger)`
-    (Events.ITERATION_COMPLETED, hnem_accumulate)
-    (Events.COMPLETED, hnem_update)
-]
 
 LOG_INTERVAL = 100
