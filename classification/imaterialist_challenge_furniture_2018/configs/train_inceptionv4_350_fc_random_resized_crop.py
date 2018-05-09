@@ -1,5 +1,4 @@
 # Basic training configuration file
-from pathlib import Path
 from torch.optim import RMSprop
 from torch.optim.lr_scheduler import ReduceLROnPlateau, MultiStepLR
 from torchvision.transforms import RandomHorizontalFlip
@@ -15,7 +14,6 @@ DEBUG = True
 DEVICE = 'cuda'
 
 OUTPUT_PATH = "output"
-
 
 size = 350
 
@@ -78,7 +76,7 @@ OPTIM = RMSprop(
 
 
 LR_SCHEDULERS = [
-    MultiStepLR(OPTIM, milestones=[2, 4, 6, 8, 10, 12], gamma=0.94)
+    MultiStepLR(OPTIM, milestones=[2, 4, 5, 6, 7, 8, 9, 10, 11, 12], gamma=0.92)
 ]
 
 # REDUCE_LR_ON_PLATEAU = ReduceLROnPlateau(OPTIM, mode='min', factor=0.5, patience=2, threshold=0.1, verbose=True)
