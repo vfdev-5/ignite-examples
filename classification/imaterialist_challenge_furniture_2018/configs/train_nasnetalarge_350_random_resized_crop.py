@@ -1,12 +1,12 @@
 # Basic training configuration file
 from torch.optim import RMSprop
-from torch.optim.lr_scheduler import ReduceLROnPlateau, MultiStepLR
-from torchvision.transforms import RandomHorizontalFlip, RandomVerticalFlip
+from torch.optim.lr_scheduler import LambdaLR
+from torchvision.transforms import RandomHorizontalFlip
 from torchvision.transforms import RandomResizedCrop, RandomChoice
 from torchvision.transforms import ColorJitter, ToTensor, Normalize
 from common.dataset import FilesFromCsvDataset
 from common.data_loaders import get_data_loader
-from models.inceptionv4 import FurnitureInceptionV4_350_FC
+from models.nasnet_a_large import FurnitureNASNetALarge350
 
 
 SEED = 17
@@ -20,30 +20,30 @@ size = 350
 TRAIN_TRANSFORMS = [
     RandomChoice(
         [
-            RandomResizedCrop(size, scale=(0.4, 6.0), interpolation=3),
-            RandomResizedCrop(size, scale=(0.6, 1.0), interpolation=3),
+            RandomResizedCrop(size, scale=(0.5, 8.0), interpolation=3),
+            RandomResizedCrop(size, scale=(0.8, 1.0), interpolation=3),
         ]
     ),
     RandomHorizontalFlip(p=0.5),
-    RandomVerticalFlip(p=0.5),
     ColorJitter(hue=0.12, brightness=0.12),
     ToTensor(),
     Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
 ]
 
 VAL_TRANSFORMS = [
-    RandomResizedCrop(size, scale=(0.7, 1.0), interpolation=3),
+    RandomResizedCrop(size, scale=(0.8, 1.0), interpolation=3),
     RandomHorizontalFlip(p=0.5),
     ToTensor(),
     Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
 ]
 
 
-BATCH_SIZE = 24
+BATCH_SIZE = 8
 NUM_WORKERS = 15
 
 
 dataset = FilesFromCsvDataset("output/filtered_train_dataset.csv")
+
 TRAIN_LOADER = get_data_loader(dataset,
                                data_transform=TRAIN_TRANSFORMS,
                                batch_size=BATCH_SIZE,
@@ -59,34 +59,42 @@ VAL_LOADER = get_data_loader(val_dataset,
                              pin_memory='cuda' in DEVICE)
 
 
-MODEL = FurnitureInceptionV4_350_FC(pretrained='imagenet')
+MODEL = FurnitureNASNetALarge350(pretrained='imagenet')
 
-
-N_EPOCHS = 100
+N_EPOCHS = 15
 
 
 OPTIM = RMSprop(
     params=[
         {"params": MODEL.stem.parameters(), 'lr': 0.0012},
-        {"params": MODEL.features.parameters(), 'lr': 0.0034},
-        {"params": MODEL.classifier.parameters(), 'lr': 0.0045},
-        {"params": MODEL.final_classifier.parameters(), 'lr': 0.045},
+        {"params": MODEL.features.parameters(), 'lr': 0.004},
+        {"params": MODEL.classifier.parameters(), 'lr': 0.045},
     ],
     alpha=0.9,
-    eps=1.0)
+    eps=1.0
+)
+
+
+def lambda_lr_stem(epoch):
+    return 0.5 ** epoch
+
+
+def lambda_lr_features(epoch):
+    return 0.65 ** epoch
+
+
+def lambda_lr_classifier(epoch):
+    return 0.8 ** epoch
 
 
 LR_SCHEDULERS = [
-    MultiStepLR(OPTIM, milestones=[2, 4, 5, 6, 7, 8, 9, 10, 11, 12], gamma=0.92)
+    LambdaLR(OPTIM, lr_lambda=[lambda_lr_stem, lambda_lr_features, lambda_lr_classifier])
 ]
-
-# REDUCE_LR_ON_PLATEAU = ReduceLROnPlateau(OPTIM, mode='min', factor=0.5, patience=2, threshold=0.1, verbose=True)
 
 
 EARLY_STOPPING_KWARGS = {
-    'patience': 15,
+    'patience': 5,
     # 'score_function': None
 }
-
 
 LOG_INTERVAL = 100

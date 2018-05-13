@@ -8,7 +8,7 @@ from torchvision.transforms import ColorJitter, ToTensor, Normalize
 from common.dataset import FilesFromCsvDataset
 from common.data_loaders import get_data_loader
 from models.squeezenet_350 import FurnitureSqueezeNet350
-from common.boostrapping_loss import HardBootstrappingLoss
+from losses.bootstrapping_loss import HardBootstrappingLoss
 
 
 SEED = 12345

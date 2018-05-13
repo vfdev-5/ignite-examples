@@ -12,7 +12,7 @@ class FurnitureSENet154_350(Module):
         in_features = self.model.last_linear.in_features
         self.model.last_linear = Linear(in_features, 128)
 
-        for m in self.last_linear.modules():
+        for m in self.model.last_linear.modules():
             if isinstance(m, Linear):
                 m.weight.data.normal_(0, 0.01)
                 m.bias.data.zero_()

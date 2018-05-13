@@ -8,7 +8,7 @@ from torchvision.transforms import ColorJitter, ToTensor, Normalize
 from common.dataset import FilesFromCsvDataset
 from common.data_loaders import get_data_loader
 from models.inceptionresnetv2 import FurnitureInceptionResNet299
-from common.boostrapping_loss import SoftBootstrappingLoss
+from losses.bootstrapping_loss import SoftBootstrappingLoss
 
 
 SEED = 12345

@@ -1,7 +1,7 @@
 # Basic training configuration file
 from pathlib import Path
 from torch.optim import SGD
-from torch.optim.lr_scheduler import ReduceLROnPlateau, MultiStepLR
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torchvision.transforms import RandomHorizontalFlip
 from torchvision.transforms import RandomResizedCrop, RandomChoice
 from torchvision.transforms import ColorJitter, ToTensor, Normalize
@@ -15,12 +15,13 @@ DEBUG = True
 OUTPUT_PATH = "output"
 DATASET_PATH = Path("/home/fast_storage/imaterialist-challenge-furniture-2018/")
 
+size = 350
 
 TRAIN_TRANSFORMS = [
     RandomChoice(
         [
-            RandomResizedCrop(350, scale=(0.3, 8.0), interpolation=3),
-            RandomResizedCrop(350, scale=(0.8, 1.0), interpolation=3),
+            RandomResizedCrop(size, scale=(0.3, 8.0), interpolation=3),
+            RandomResizedCrop(size, scale=(0.8, 1.0), interpolation=3),
         ]
     ),
     RandomHorizontalFlip(p=0.5),
@@ -30,7 +31,7 @@ TRAIN_TRANSFORMS = [
 ]
 
 VAL_TRANSFORMS = [
-    RandomResizedCrop(350, scale=(0.8, 1.0)),
+    RandomResizedCrop(size, scale=(0.8, 1.0)),
     RandomHorizontalFlip(p=0.5),
     ToTensor(),
     Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])

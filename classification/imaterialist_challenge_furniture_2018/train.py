@@ -153,7 +153,7 @@ def run(config_file):
     logger.debug("- validation data loader: {} number of batches | {} number of samples"
                  .format(len(val_loader), len(val_loader.dataset)))
 
-    write_model_graph(writer, model=model, data_loader=train_loader, device=device)
+    # write_model_graph(writer, model=model, data_loader=train_loader, device=device)
 
     optimizer = config["OPTIM"]
 

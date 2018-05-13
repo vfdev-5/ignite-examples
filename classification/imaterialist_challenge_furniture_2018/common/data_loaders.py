@@ -83,6 +83,7 @@ def get_trainval_indices(dataset, fold_index=0, n_splits=5, xy_transforms=None, 
 
 def get_data_loader(dataset_or_path,
                     data_transform=None,
+                    target_transform=None,
                     sample_indices=None,
                     sampler=None,
                     collate_fn=default_collate,
@@ -109,8 +110,8 @@ def get_data_loader(dataset_or_path,
         sampler = SubsetRandomSampler(sample_indices)
 
     dataset = TransformedDataset(dataset, transforms=read_image, target_transforms=lambda l: l - 1)
-    if data_transform is not None:
-        dataset = TransformedDataset(dataset, transforms=data_transform)
+    if data_transform is not None or target_transform is not None:
+        dataset = TransformedDataset(dataset, transforms=data_transform, target_transforms=target_transform)
 
     data_loader = DataLoader(dataset, batch_size=batch_size,
                              sampler=sampler,

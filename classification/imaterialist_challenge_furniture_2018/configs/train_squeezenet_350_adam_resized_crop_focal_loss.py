@@ -7,7 +7,7 @@ from torchvision.transforms import RandomApply, RandomResizedCrop
 from torchvision.transforms import ColorJitter, ToTensor, Normalize
 from common.dataset import FilesFromCsvDataset
 from common.data_loaders import get_data_loader
-from common.focal_loss import FocalLoss
+from losses.focal_loss import FocalLoss
 from models.squeezenet_350 import FurnitureSqueezeNet350
 
 SEED = 12345

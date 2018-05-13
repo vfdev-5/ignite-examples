@@ -1,4 +1,5 @@
 from torch.nn import Module, Linear, ModuleList, ReLU, Sequential
+from torch.utils.checkpoint import checkpoint_sequential
 
 from pretrainedmodels.models.nasnet import nasnetalarge
 
@@ -55,8 +56,19 @@ class FurnitureNASNetALarge(Module):
 
 class FurnitureNASNetALarge350(FurnitureNASNetALarge):
 
-    def __init__(self, pretrained):
+    def __init__(self, pretrained, with_checkpoint=False, checkpoint_n_chunks=5):
         super(FurnitureNASNetALarge350, self).__init__(pretrained)
+
+        if with_checkpoint:
+            self.forward = self._forward_with_checkpoints
+            self.checkpoint_n_chunks = checkpoint_n_chunks
+            self.modules_to_checkpoint = [module for k, module in self.stem._modules.items()] + \
+                [module for k, module in self.features._modules.items()]
+
+    def _forward_with_checkpoints(self, x):
+        x = checkpoint_sequential(self.modules_to_checkpoint, self.checkpoint_n_chunks, x)
+        x = self.model.logits(x)
+        return x
 
 
 class FurnitureNASNetALarge350Finetunned(Module):
