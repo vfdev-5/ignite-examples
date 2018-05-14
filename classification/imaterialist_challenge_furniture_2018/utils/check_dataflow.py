@@ -190,7 +190,7 @@ def run(config_file):
 
 
 if __name__ == "__main__":
-    parser = ArgumentParser()
+    parser = ArgumentParser("Script to create statistics of the dataflow")
     parser.add_argument("config_file", type=str, help="Configuration file. See examples in configs/")
     args = parser.parse_args()
     run(args.config_file)
