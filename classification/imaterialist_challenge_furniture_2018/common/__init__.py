@@ -2,6 +2,11 @@ import logging
 
 
 def setup_logger(logger, log_filepath, level=logging.INFO):
+
+    if logger.hasHandlers():
+        for h in list(logger.handlers):
+            logger.removeHandler(h)
+
     logger.setLevel(level)
     # create file handler which logs even debug messages
     fh = logging.FileHandler(log_filepath)

@@ -14,3 +14,4 @@ if __name__ == "__main__":
             run(config_file)
         except Exception as e:
             print("\n\n !!! Run {} failed !!!\n".format(config_file))
+            print("\n{}".format(e))

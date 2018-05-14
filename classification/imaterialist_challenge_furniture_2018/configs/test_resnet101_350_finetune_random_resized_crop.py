@@ -11,9 +11,7 @@ DEBUG = True
 
 OUTPUT_PATH = "output"
 dataset_path = Path("/home/fast_storage/imaterialist-challenge-furniture-2018/")
-
-SAVE_PROBAS = True
-# SAMPLE_SUBMISSION_PATH = dataset_path / "sample_submission_randomlabel.csv"
+SAMPLE_SUBMISSION_PATH = dataset_path / "sample_submission_randomlabel.csv"
 
 
 TEST_TRANSFORMS = [
@@ -21,11 +19,11 @@ TEST_TRANSFORMS = [
     RandomVerticalFlip(p=0.5),
     RandomHorizontalFlip(p=0.5),
     ToTensor(),
-    Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+    Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 ]
 
 N_CLASSES = 128
-BATCH_SIZE = 8
+BATCH_SIZE = 128
 NUM_WORKERS = 15
 
 TEST_LOADER = get_test_data_loader(
@@ -36,7 +34,7 @@ TEST_LOADER = get_test_data_loader(
     pin_memory=True)
 
 
-MODEL = (Path(OUTPUT_PATH) / "train_nasnetalarge_350_random_resized_crop" / "20180509_1544" /
-         "checkpoint_FurnitureNASNetALarge350_10.pth").as_posix()
+MODEL = (Path(OUTPUT_PATH) / "train_resnet101_350_finetune_random_resized_crop" / "20180508_2303" /
+         "model_FurnitureResNet101_350_finetune_11_val_loss=0.6026976.pth").as_posix()
 
 N_TTA = 12

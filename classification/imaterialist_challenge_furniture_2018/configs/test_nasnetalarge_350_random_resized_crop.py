@@ -1,31 +1,31 @@
 # Basic training configuration file
 from pathlib import Path
-from torchvision.transforms import RandomVerticalFlip, RandomHorizontalFlip
+from torchvision.transforms import RandomHorizontalFlip
 from torchvision.transforms import RandomResizedCrop
-from torchvision.transforms import ToTensor, Normalize
+from torchvision.transforms import ToTensor, Normalize, ColorJitter
 from common.dataset import get_test_data_loader
 
 
-SEED = 12345
+SEED = 17
 DEBUG = True
 
 OUTPUT_PATH = "output"
-dataset_path = Path("/home/fast_storage/imaterialist-challenge-furniture-2018/")
+dataset_path = Path("/home/local_data/imaterialist-challenge-furniture-2018/")
 
-SAVE_PROBAS = True
-# SAMPLE_SUBMISSION_PATH = dataset_path / "sample_submission_randomlabel.csv"
+SAVE_PROBAS = False
+SAMPLE_SUBMISSION_PATH = dataset_path / "sample_submission_randomlabel.csv"
 
 
 TEST_TRANSFORMS = [
     RandomResizedCrop(350, scale=(0.7, 1.0), interpolation=3),
-    RandomVerticalFlip(p=0.5),
     RandomHorizontalFlip(p=0.5),
+    ColorJitter(hue=0.12, brightness=0.12),
     ToTensor(),
     Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
 ]
 
 N_CLASSES = 128
-BATCH_SIZE = 8
+BATCH_SIZE = 64
 NUM_WORKERS = 15
 
 TEST_LOADER = get_test_data_loader(
@@ -37,6 +37,6 @@ TEST_LOADER = get_test_data_loader(
 
 
 MODEL = (Path(OUTPUT_PATH) / "train_nasnetalarge_350_random_resized_crop" / "20180509_1544" /
-         "checkpoint_FurnitureNASNetALarge350_10.pth").as_posix()
+         "model_FurnitureNASNetALarge350_5_val_loss=0.5331665.pth").as_posix()
 
 N_TTA = 12
