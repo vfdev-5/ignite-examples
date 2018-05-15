@@ -2,15 +2,15 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from torchvision.models.resnet import resnet50
+from torchvision.models.resnet import resnet50, resnet101
 
 
 class FurnitureRetinaNetClassification(nn.Module):
     num_anchors = 1
 
-    def __init__(self, num_classes, pretrained=True):
+    def __init__(self, resnet, num_classes):
         super(FurnitureRetinaNetClassification, self).__init__()
-        self.fpn = FPN50(pretrained)
+        self.fpn = FPN(resnet)
         self.num_classes = num_classes
         self.cls_head = self._make_head(self.num_anchors * self.num_classes)
 
@@ -45,11 +45,25 @@ class FurnitureRetinaNetClassification(nn.Module):
         return nn.Sequential(*layers)
 
 
-class FPN50(nn.Module):
-    def __init__(self, pretrained):
-        super(FPN50, self).__init__()
+class FurnitureRetinaNet50Classification(FurnitureRetinaNetClassification):
 
-        self.resnet = resnet50(pretrained=pretrained)
+    def __init__(self, num_classes, pretrained=True):
+        resnet = resnet50(pretrained)
+        super(FurnitureRetinaNet50Classification, self).__init__(resnet, num_classes=num_classes)
+
+
+class FurnitureRetinaNet101Classification(FurnitureRetinaNetClassification):
+
+    def __init__(self, num_classes, pretrained=True):
+        resnet = resnet101(pretrained)
+        super(FurnitureRetinaNet101Classification, self).__init__(resnet, num_classes=num_classes)
+
+
+class FPN(nn.Module):
+    def __init__(self, resnet):
+        super(FPN, self).__init__()
+
+        self.resnet = resnet
 
         self.stem = nn.Sequential(
             self.resnet.conv1,
