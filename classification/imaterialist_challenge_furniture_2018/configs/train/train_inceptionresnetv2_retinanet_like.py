@@ -1,4 +1,5 @@
 # Basic training configuration file
+from pathlib import Path
 from torch.optim import Adam
 from torch.optim.lr_scheduler import MultiStepLR
 from torchvision.transforms import RandomHorizontalFlip, Compose
@@ -13,13 +14,13 @@ SEED = 17
 DEBUG = True
 DEVICE = 'cuda'
 
-OUTPUT_PATH = "output"
+OUTPUT_PATH = Path("output") / "train"
 
 size = 350
 
 TRAIN_TRANSFORMS = Compose([
     RandomApply(
-        [RandomAffine(degrees=10, resample=3, fillcolor=(255, 255, 255)), ],
+        [RandomAffine(degrees=15, resample=3, fillcolor=(255, 255, 255)), ],
         p=0.5
     ),
     RandomResizedCrop(size, scale=(0.7, 1.0), interpolation=3),
@@ -33,7 +34,7 @@ TRAIN_TRANSFORMS = Compose([
 VAL_TRANSFORMS = TRAIN_TRANSFORMS
 
 
-BATCH_SIZE = 24
+BATCH_SIZE = 36
 NUM_WORKERS = 15
 
 
@@ -61,14 +62,15 @@ N_EPOCHS = 100
 
 OPTIM = Adam(
     params=[
-        {"params": MODEL.fpn.stem.parameters(), 'lr': 0.00001},
-        {"params": MODEL.fpn.low_features.parameters(), 'lr': 0.0001},
-        {"params": MODEL.fpn.mid_features.parameters(), 'lr': 0.0001},
+        {"params": MODEL.fpn.stem.parameters(), 'lr': 0.0001},
+        {"params": MODEL.fpn.low_features.parameters(), 'lr': 0.00015},
+        {"params": MODEL.fpn.mid_features.parameters(), 'lr': 0.00015},
         {"params": MODEL.fpn.top_features.parameters(), 'lr': 0.002},
 
-        {"params": MODEL.cls_head.parameters(), 'lr': 0.002},
-        {"params": MODEL.inner_classifier.parameters(), 'lr': 0.002},
-        {"params": MODEL.final_classifier.parameters(), 'lr': 0.002},
+        {"params": MODEL.cls_head.parameters(), 'lr': 0.0022},
+        {"params": MODEL.base_classifier.parameters(), 'lr': 0.0025},
+        {"params": MODEL.boxes_classifier.parameters(), 'lr': 0.0025},
+        {"params": MODEL.final_classifier.parameters(), 'lr': 0.004},
     ]
 )
 

@@ -9,7 +9,7 @@ if __name__ == "__main__":
     parser = ArgumentParser("Update test predictions with leaked data")
     parser.add_argument("submission_csv", type=str, help="Path to a submission")
     parser.add_argument("test_with_labels_csv", default="../notebooks/test_with_labels.csv",
-                        type=int, help="Test with labels csv")
+                        type=str, help="Test with labels csv")
     parser.add_argument("output_folder", type=str,
                         help="Output folder where to saved `fixed_submission_csv` file")
 

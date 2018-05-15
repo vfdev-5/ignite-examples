@@ -7,3 +7,4 @@ notebooks/catboost_info
 train.json
 validation.json
 test.json
+*.pkl
