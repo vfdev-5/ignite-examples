@@ -25,7 +25,7 @@ TEST_TRANSFORMS = [
 ]
 
 N_CLASSES = 128
-BATCH_SIZE = 8
+BATCH_SIZE = 64
 NUM_WORKERS = 15
 
 TEST_LOADER = get_test_data_loader(
@@ -37,6 +37,6 @@ TEST_LOADER = get_test_data_loader(
 
 
 MODEL = (Path(OUTPUT_PATH) / "train_nasnetalarge_350_random_resized_crop" / "20180509_1544" /
-         "checkpoint_FurnitureNASNetALarge350_10.pth").as_posix()
+         "model_FurnitureNASNetALarge350_5_val_loss=0.5331665.pth").as_posix()
 
 N_TTA = 12

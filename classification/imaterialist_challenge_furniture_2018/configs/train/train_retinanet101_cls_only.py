@@ -61,13 +61,14 @@ N_EPOCHS = 100
 
 OPTIM = Adam(
     params=[
-        {"params": MODEL.fpn.stem.parameters(), 'lr': 0.00001},
-        {"params": MODEL.fpn.low_features.parameters(), 'lr': 0.0001},
-        {"params": MODEL.fpn.mid_features.parameters(), 'lr': 0.0001},
+        {"params": MODEL.fpn.stem.parameters(), 'lr': 0.0001},
+        {"params": MODEL.fpn.low_features.parameters(), 'lr': 0.00012},
+        {"params": MODEL.fpn.mid_features.parameters(), 'lr': 0.00012},
         {"params": MODEL.fpn.top_features.parameters(), 'lr': 0.002},
 
-        {"params": MODEL.cls_head.parameters(), 'lr': 0.003},
-        {"params": MODEL.inner_classifier.parameters(), 'lr': 0.003},
+        {"params": MODEL.cls_head.parameters(), 'lr': 0.002},
+        {"params": MODEL.base_classifier.parameters(), 'lr': 0.003},
+        {"params": MODEL.boxes_classifier.parameters(), 'lr': 0.003},
         {"params": MODEL.final_classifier.parameters(), 'lr': 0.005},
     ]
 )
