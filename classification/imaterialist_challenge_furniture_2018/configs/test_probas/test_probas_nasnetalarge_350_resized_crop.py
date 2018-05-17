@@ -36,7 +36,7 @@ TEST_LOADER = get_test_data_loader(
     pin_memory=True)
 
 
-MODEL = (Path(OUTPUT_PATH) / "training_FurnitureNASNetALarge350_20180426_0833" /
-         "model_FurnitureNASNetALarge350_6_val_loss=0.5039662.pth").as_posix()
+MODEL = (Path(OUTPUT_PATH) / "train_nasnetalarge_350_random_resized_crop" / "20180509_1544" /
+         "checkpoint_FurnitureNASNetALarge350_10.pth").as_posix()
 
 N_TTA = 12

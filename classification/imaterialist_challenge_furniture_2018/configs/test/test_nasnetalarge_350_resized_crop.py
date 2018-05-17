@@ -10,7 +10,7 @@ SEED = 12345
 DEBUG = True
 
 OUTPUT_PATH = "output"
-dataset_path = Path("/home/fast_storage/imaterialist-challenge-furniture-2018/")
+dataset_path = Path("/home/local_storage/imaterialist-challenge-furniture-2018/")
 SAMPLE_SUBMISSION_PATH = dataset_path / "sample_submission_randomlabel.csv"
 
 
