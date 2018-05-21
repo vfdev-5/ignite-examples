@@ -4,12 +4,12 @@ from pretrainedmodels.models.inceptionv4 import inceptionv4
 
 class FurnitureInceptionV4_350(Module):
 
-    def __init__(self, pretrained=True):
+    def __init__(self, num_classes=128, pretrained=True):
         super(FurnitureInceptionV4_350, self).__init__()
 
         self.model = inceptionv4(num_classes=1000, pretrained=pretrained)
         self.model.avg_pool = AdaptiveAvgPool2d(1)
-        self.model.last_linear = Linear(1536, 128)
+        self.model.last_linear = Linear(1536, num_classes)
 
         for m in self.model.last_linear.modules():
             if isinstance(m, Linear):
