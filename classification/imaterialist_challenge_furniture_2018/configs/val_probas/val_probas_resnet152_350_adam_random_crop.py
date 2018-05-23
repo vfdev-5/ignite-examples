@@ -36,7 +36,7 @@ TEST_LOADER = get_test_data_loader(
     pin_memory=True)
 
 
-MODEL = (Path("output") / "train" / "train_resnet152_350_adam_resized_crop" / "20180501_2111" /
-         "model_FurnitureResNet152_350_8_val_loss=0.5486768.pth").as_posix()
+MODEL = (Path("output") / "train" / "train_resnet152_350_adam_random_crop" / "20180521_1652" /
+         "model_FurnitureResNet152_350_8_val_loss=0.5701099.pth").as_posix()
 
 N_TTA = 12

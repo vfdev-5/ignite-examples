@@ -174,7 +174,14 @@ def run(config_file):
         'nll': Loss(criterion)
     }
     train_evaluator = create_supervised_evaluator(model, metrics=metrics, device=device)
-    val_evaluator = create_supervised_evaluator(model, metrics=metrics, device=device)
+
+    val_metrics = {
+        'accuracy': CategoricalAccuracy(),
+        'precision': Precision(),
+        'recall': Recall(),
+        'nll': Loss(nn.CrossEntropyLoss())
+    }
+    val_evaluator = create_supervised_evaluator(model, metrics=val_metrics, device=device)
 
     logger.debug("Setup handlers")
     log_interval = config.get("LOG_INTERVAL", 100)

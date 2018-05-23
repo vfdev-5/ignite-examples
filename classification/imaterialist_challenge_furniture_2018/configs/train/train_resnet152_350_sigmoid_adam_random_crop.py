@@ -1,10 +1,12 @@
 # Basic training configuration file
 from pathlib import Path
+from torch.nn import BCEWithLogitsLoss
 from torch.optim import Adam
-from torch.optim.lr_scheduler import ReduceLROnPlateau, MultiStepLR
+from torch.optim.lr_scheduler import MultiStepLR
 from torchvision.transforms import RandomHorizontalFlip, RandomVerticalFlip
 from torchvision.transforms import RandomResizedCrop
 from torchvision.transforms import ColorJitter, ToTensor, Normalize
+from ignite._utils import to_onehot
 from common.dataset import FilesFromCsvDataset
 from common.data_loaders import get_data_loader
 from models.resnet import FurnitureResNet152_350
@@ -14,7 +16,7 @@ SEED = 17
 DEBUG = True
 DEVICE = "cuda"
 
-OUTPUT_PATH = "output"
+OUTPUT_PATH = Path("output") / "train"
 
 
 size = 350
@@ -55,6 +57,19 @@ VAL_LOADER = get_data_loader(val_dataset,
 
 
 MODEL = FurnitureResNet152_350(pretrained='imagenet')
+
+
+n_classes = 128
+
+
+class _BCEWithLogitsLoss(BCEWithLogitsLoss):
+
+    def forward(self, input, target):
+        target = to_onehot(target, num_classes=n_classes).float()
+        return super(_BCEWithLogitsLoss, self).forward(input, target)
+
+
+CRITERION = _BCEWithLogitsLoss(size_average=False)
 
 N_EPOCHS = 15
 

@@ -19,11 +19,11 @@ TEST_TRANSFORMS = [
     RandomVerticalFlip(p=0.5),
     RandomHorizontalFlip(p=0.5),
     ToTensor(),
-    Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+    Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 ]
 
 N_CLASSES = 128
-BATCH_SIZE = 20
+BATCH_SIZE = 64
 NUM_WORKERS = 15
 
 TEST_LOADER = get_test_data_loader(
