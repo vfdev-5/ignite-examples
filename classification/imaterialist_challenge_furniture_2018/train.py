@@ -141,17 +141,17 @@ def run(config_file):
     train_loader, val_loader = config["TRAIN_LOADER"], config["VAL_LOADER"]
 
     # Setup training subset to run evaluation on:
-    indices = np.arange(len(train_loader.dataset))
+    indices = np.arange(len(train_loader.sampler))
     np.random.shuffle(indices)
-    indices = indices[:len(val_loader.dataset)] if len(val_loader.dataset) < len(train_loader.dataset) else indices
+    indices = indices[:len(val_loader.sampler)] if len(val_loader.sampler) < len(train_loader.sampler) else indices
     train_eval_loader = get_train_eval_data_loader(train_loader, indices)
 
     logger.debug("- train data loader: {} number of batches | {} number of samples"
-                 .format(len(train_loader), len(train_loader.dataset)))
+                 .format(len(train_loader), len(train_loader.sampler)))
     logger.debug("- train eval data loader: {} number of batches | {} number of samples"
-                 .format(len(train_eval_loader), len(train_eval_loader.dataset)))
+                 .format(len(train_eval_loader), len(train_eval_loader.sampler)))
     logger.debug("- validation data loader: {} number of batches | {} number of samples"
-                 .format(len(val_loader), len(val_loader.dataset)))
+                 .format(len(val_loader), len(val_loader.sampler)))
 
     # write_model_graph(writer, model=model, data_loader=train_loader, device=device)
 

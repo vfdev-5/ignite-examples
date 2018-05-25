@@ -52,9 +52,9 @@ def get_trainval_data_loaders(dataset, train_index, val_index,
     return train_batches, val_batches
 
 
-def get_trainval_indices(dataset, fold_index=0, n_splits=5, xy_transforms=None, batch_size=32, n_workers=8):
+def get_trainval_indices(dataset, fold_index=0, n_splits=5, xy_transforms=None, batch_size=32, n_workers=8, seed=None):
 
-    trainval_split = StratifiedKFold(n_splits=n_splits, shuffle=True)
+    trainval_split = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=seed)
 
     if xy_transforms is not None:
         targets_dataset = TransformedDataset(dataset, transforms=xy_transforms)
