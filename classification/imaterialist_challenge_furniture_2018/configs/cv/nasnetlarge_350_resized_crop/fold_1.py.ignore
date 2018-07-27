@@ -89,7 +89,7 @@ OPTIM = SGD(
 
 
 LR_SCHEDULERS = [
-    MultiStepLR(OPTIM, milestones=[2, 4, 6, 8, 10, 12], gamma=0.15)
+    MultiStepLR(OPTIM, milestones=[2, 4, 6, 8, 10, 12], gamma=0.18)
 ]
 
 
