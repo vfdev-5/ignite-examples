@@ -4,6 +4,7 @@ from argparse import ArgumentParser
 import random
 import logging
 from importlib import util
+import shutil
 
 import numpy as np
 import pandas as pd
@@ -17,20 +18,20 @@ try:
 except ImportError:
     raise RuntimeError("No tensorboardX package is found. Please install with the command: \npip install tensorboardX")
 
-from ignite.engines import Events, Engine
+from ignite.engine import Events, Engine
 from ignite.handlers import Timer
-from ignite._utils import to_variable, to_tensor
+from ignite._utils import convert_tensor
 
 # Load common module
 sys.path.insert(0, Path(__file__).absolute().parent.parent.as_posix())
 from common import setup_logger, save_conf
 
 
-def create_inferencer(model, cuda=True):
+def create_inferencer(model, device='cpu'):
 
     def _prepare_batch(batch):
         x, index = batch
-        x = to_variable(x, cuda=cuda)
+        x = convert_tensor(x, device=device)
         return x, index
 
     def _update(engine, batch):
@@ -38,7 +39,7 @@ def create_inferencer(model, cuda=True):
         y_pred = model(x)
         y_pred = F.softmax(y_pred, dim=1)
         return {
-            "y_pred": to_tensor(y_pred, cpu=True),
+            "y_pred": convert_tensor(y_pred, device='cpu'),
             "indices": indices
         }
 
@@ -75,6 +76,10 @@ def load_config(config_filepath):
     assert isinstance(config["MODEL"], Module), \
         "Model should be an instance of torch.nn.Module, but given {}".format(type(config["MODEL"]))
 
+    # Disable requires grad:
+    for param in config["MODEL"].parameters():
+        param.requires_grad = False
+
     return config
 
 
@@ -104,8 +109,6 @@ def run(config_file):
     torch.manual_seed(seed)
 
     output = Path(config["OUTPUT_PATH"])
-    model = config["MODEL"]
-    # model_name = model.__class__.__name__
     debug = config.get("DEBUG", False)
 
     from datetime import datetime
@@ -115,6 +118,8 @@ def run(config_file):
     assert not log_dir.exists(), \
         "Output logging directory '{}' already existing".format(log_dir)
     log_dir.mkdir(parents=True)
+
+    shutil.copyfile(config_file, (log_dir / Path(config_file).name).as_posix())
 
     log_level = logging.INFO
     if debug:
@@ -129,18 +134,21 @@ def run(config_file):
 
     save_conf(config_file, log_dir.as_posix(), logger, writer)
 
-    cuda = torch.cuda.is_available()
-    if cuda:
-        logger.debug("CUDA is enabled")
+    model = config["MODEL"]
+    device = config.get("DEVICE", 'cuda')
+    if 'cuda' in device:
+        assert torch.cuda.is_available(), \
+            "Device {} is not compatible with torch.cuda.is_available()".format(device)
         from torch.backends import cudnn
         cudnn.benchmark = True
-        model = model.cuda()
+        logger.debug("CUDA is enabled")
+        model = model.to(device)
 
     logger.debug("Setup test dataloader")
     test_loader = config["TEST_LOADER"]
 
     logger.debug("Setup ignite inferencer")
-    inferencer = create_inferencer(model, cuda=cuda)
+    inferencer = create_inferencer(model, device=device)
 
     n_tta = config["N_TTA"]
     n_classes = config["N_CLASSES"]
@@ -168,7 +176,7 @@ def run(config_file):
         tta_index = engine.state.epoch - 1
         start_index = ((engine.state.iteration - 1) % len(test_loader)) * batch_size
         end_index = min(start_index + batch_size, n_samples)
-        batch_y_probas = output['y_pred'].numpy()
+        batch_y_probas = output['y_pred'].detach().numpy()
         y_probas_tta[start_index:end_index, :, tta_index] = batch_y_probas
         if tta_index == 0:
             indices[start_index:end_index] = output['indices']

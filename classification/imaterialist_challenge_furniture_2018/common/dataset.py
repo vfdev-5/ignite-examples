@@ -6,6 +6,7 @@ import pandas as pd
 from PIL import Image
 
 from torch.utils.data import Dataset, DataLoader
+from torch.utils.data.dataset import Subset
 from torch.utils.data.dataloader import default_collate
 from torchvision.transforms import Compose
 
@@ -115,7 +116,7 @@ def get_data_loaders(train_dataset_path,
                      val_data_transform,
                      train_batch_size, val_batch_size,
                      num_workers,
-                     cuda=True,
+                     pin_memory=True,
                      collate_fn=default_collate):
     if isinstance(train_data_transform, (list, tuple)):
         train_data_transform = Compose(train_data_transform)
@@ -136,10 +137,10 @@ def get_data_loaders(train_dataset_path,
     train_loader = DataLoader(train_dataset, batch_size=train_batch_size,
                               shuffle=True,
                               collate_fn=collate_fn,
-                              num_workers=num_workers, pin_memory=cuda)
+                              num_workers=num_workers, pin_memory=pin_memory)
     val_loader = DataLoader(val_dataset, batch_size=val_batch_size, shuffle=True,
                             collate_fn=collate_fn,
-                            num_workers=num_workers, pin_memory=cuda)
+                            num_workers=num_workers, pin_memory=pin_memory)
 
     return train_loader, val_loader
 
@@ -147,7 +148,7 @@ def get_data_loaders(train_dataset_path,
 def get_test_data_loader(dataset_path,
                          test_data_transform,
                          batch_size,
-                         num_workers, cuda=True):
+                         num_workers, pin_memory=True):
 
     if isinstance(test_data_transform, (list, tuple)):
         test_data_transform.insert(0, read_image)
@@ -157,5 +158,19 @@ def get_test_data_loader(dataset_path,
     test_dataset = TransformedDataset(test_dataset, transforms=test_data_transform)
     test_loader = DataLoader(test_dataset, batch_size=batch_size,
                              shuffle=False, drop_last=False,
-                             num_workers=num_workers, pin_memory=cuda)
+                             num_workers=num_workers, pin_memory=pin_memory)
     return test_loader
+
+
+def get_train_eval_data_loader(train_loader, indices=None):
+
+    assert isinstance(indices, (list, tuple, np.ndarray))
+    subset = Subset(train_loader.dataset, indices)
+    train_eval_loader = DataLoader(subset, batch_size=train_loader.batch_size,
+                                   shuffle=False, drop_last=False,
+                                   num_workers=train_loader.num_workers,
+                                   pin_memory=train_loader.pin_memory,
+                                   collate_fn=train_loader.collate_fn,
+                                   timeout=train_loader.timeout,
+                                   worker_init_fn=train_loader.worker_init_fn)
+    return train_eval_loader

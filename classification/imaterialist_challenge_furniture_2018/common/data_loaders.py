@@ -52,9 +52,9 @@ def get_trainval_data_loaders(dataset, train_index, val_index,
     return train_batches, val_batches
 
 
-def get_trainval_indices(dataset, fold_index=0, n_splits=5, xy_transforms=None, batch_size=32, n_workers=8):
+def get_trainval_indices(dataset, fold_index=0, n_splits=5, xy_transforms=None, batch_size=32, n_workers=8, seed=None):
 
-    trainval_split = StratifiedKFold(n_splits=n_splits, shuffle=True)
+    trainval_split = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=seed)
 
     if xy_transforms is not None:
         targets_dataset = TransformedDataset(dataset, transforms=xy_transforms)
@@ -83,11 +83,12 @@ def get_trainval_indices(dataset, fold_index=0, n_splits=5, xy_transforms=None, 
 
 def get_data_loader(dataset_or_path,
                     data_transform=None,
+                    target_transform=None,
                     sample_indices=None,
                     sampler=None,
                     collate_fn=default_collate,
                     batch_size=16,
-                    num_workers=8, cuda=True):
+                    num_workers=8, pin_memory=True):
     assert isinstance(dataset_or_path, Dataset) or \
         (isinstance(dataset_or_path, (str, Path)) and Path(dataset_or_path).exists()), \
         "Dataset or path should be either Dataset or path to images, but given {}".format(dataset_or_path)
@@ -109,11 +110,11 @@ def get_data_loader(dataset_or_path,
         sampler = SubsetRandomSampler(sample_indices)
 
     dataset = TransformedDataset(dataset, transforms=read_image, target_transforms=lambda l: l - 1)
-    if data_transform is not None:
-        dataset = TransformedDataset(dataset, transforms=data_transform)
+    if data_transform is not None or target_transform is not None:
+        dataset = TransformedDataset(dataset, transforms=data_transform, target_transforms=target_transform)
 
     data_loader = DataLoader(dataset, batch_size=batch_size,
                              sampler=sampler,
                              collate_fn=collate_fn,
-                             num_workers=num_workers, pin_memory=cuda)
+                             num_workers=num_workers, pin_memory=pin_memory)
     return data_loader

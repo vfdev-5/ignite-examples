@@ -7,6 +7,7 @@ from torchvision.transforms import Compose, ToTensor
 from torchvision.datasets import ImageFolder
 from torch.utils.data.sampler import SubsetRandomSampler
 from torch.utils.data import DataLoader, Dataset
+from torch.utils.data.dataset import Subset
 from torchvision.datasets.folder import find_classes, has_file_allowed_extension, IMG_EXTENSIONS, pil_loader
 
 
@@ -103,3 +104,17 @@ def get_test_data_loader(dataset_path,
                              shuffle=False, drop_last=False,
                              num_workers=num_workers, pin_memory=pin_memory)
     return test_loader
+
+
+def get_train_eval_data_loader(train_loader, indices=None):
+
+    assert isinstance(indices, (list, tuple, np.ndarray))
+    subset = Subset(train_loader.dataset, indices)
+    train_eval_loader = DataLoader(subset, batch_size=train_loader.batch_size,
+                                   shuffle=False, drop_last=False,
+                                   num_workers=train_loader.num_workers,
+                                   pin_memory=train_loader.pin_memory,
+                                   collate_fn=train_loader.collate_fn,
+                                   timeout=train_loader.timeout,
+                                   worker_init_fn=train_loader.worker_init_fn)
+    return train_eval_loader
